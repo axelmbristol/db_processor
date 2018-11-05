@@ -1,6 +1,7 @@
 from pymongo import MongoClient
 from tables import *
 import os
+import re
 
 
 class Animal(IsDescription):
@@ -8,7 +9,7 @@ class Animal(IsDescription):
     date = StringCol(16)
     serial_number = Int64Col()
     signal_strength = Int16Col()
-    battery_voltage = StringCol(16)
+    battery_voltage = Int16Col()
     first_sensor_value = Int32Col()
     second_sensor_value = StringCol(16)
 
@@ -48,14 +49,13 @@ for farm_id in db_names:
 
             an = table.row
             for entry in tag_data:
-                #print(entry)
                 an['time'] = str(entry["time"])
                 an['date'] = str(entry["date"])
                 an['serial_number'] = int(serial_number)
-                if entry['signal_strength'] is not None:
-                    an['signal_strength'] = int(entry["signal_strength"])
-                if entry['battery_voltage'] is not None:
-                    an['battery_voltage'] = str(entry["battery_voltage"])
+                if entry['signal_strength'] is not None and re.sub("[^0-9]", "", entry["signal_strength"]) != '':
+                    an['signal_strength'] = int(re.sub("[^0-9]", "", entry["signal_strength"]))
+                if entry['battery_voltage'] is not None and re.sub("[^0-9]", "", entry["battery_voltage"]) != '':
+                    an['battery_voltage'] = int(re.sub("[^0-9]", "", entry["battery_voltage"]))
                 an['first_sensor_value'] = int(entry["first_sensor_value"])
                 if 'second_sensor_value' in entry:
                     an['second_sensor_value'] = str(entry["second_sensor_value"])
