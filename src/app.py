@@ -17,6 +17,11 @@ print('init mongoDB...')
 client = MongoClient('localhost', 27017)
 db_names = client.list_database_names()
 
+file_name = "data.h5"
+print("purge...")
+os.remove(file_name)
+h5file = open_file(file_name, mode="a", title="database file")
+
 for farm_id in db_names:
     if len(farm_id) != 11:
         continue
@@ -25,8 +30,6 @@ for farm_id in db_names:
     colNames = db.list_collection_names()
     cpt = 0
     colNames.sort()
-    file_name = "data.h5"
-    h5file = open_file(file_name, mode="w", title="database file")
     group = h5file.create_group("/", "_"+farm_id, 'Farm id')
     for colName in colNames:
         print(str(cpt) + "/" + str(len(colNames)) + " " + colName + "...")
@@ -35,20 +38,30 @@ for farm_id in db_names:
         for animal in animals:
             tag_data = animal["tag_data"]
             serial_number = tag_data[0]["serial_number"]
-            table = h5file.create_table(group, "_"+str(serial_number), Animal, "Animal id")
+
+            node = "_"+str(serial_number)
+            where = "/_"+farm_id
+            if "_"+str(serial_number) not in group:
+                table = h5file.create_table(group, node, Animal, "Animal id")
+            else:
+                table = h5file.get_node(where, node)
+
             an = table.row
             for entry in tag_data:
+                #print(entry)
                 an['time'] = str(entry["time"])
                 an['date'] = str(entry["date"])
                 an['serial_number'] = int(serial_number)
-                an['signal_strength'] = int(entry["signal_strength"])
-                an['battery_voltage'] = str(entry["battery_voltage"])
+                if entry['signal_strength'] is not None:
+                    an['signal_strength'] = int(entry["signal_strength"])
+                if entry['battery_voltage'] is not None:
+                    an['battery_voltage'] = str(entry["battery_voltage"])
                 an['first_sensor_value'] = int(entry["first_sensor_value"])
                 if 'second_sensor_value' in entry:
                     an['second_sensor_value'] = str(entry["second_sensor_value"])
                 an.append()
             table.flush()
-        # cpt = cpt + 1
+        cpt = cpt + 1
         # if cpt >= 1:
         #     break
 print('finished')
