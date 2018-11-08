@@ -99,9 +99,12 @@ if db_type == 1:
                 tag_data = animal["tag_data"]
                 serial_number = tag_data[0]["serial_number"]
 
-                session.execute(
-                    "CREATE TABLE if not exists \"%s\".\"%s\"(date Text,time Text,control_station Text,serial_number Text,signal_strength Int,battery_voltage Int,first_sensor_value Int,second_sensor_value Text,PRIMARY KEY( time, date ))" % (
-                        farm_id, serial_number))
+                try:
+                    session.execute(
+                        "CREATE TABLE if not exists \"%s\".\"%s\"(date Text,time Text,control_station Text,serial_number Text,signal_strength Int,battery_voltage Int,first_sensor_value Int,second_sensor_value Text,PRIMARY KEY( time, date ))" % (
+                            farm_id, serial_number))
+                except Exception:
+                    print("error while creating table")
 
                 for entry in tag_data:
                     ss = -99
@@ -114,15 +117,18 @@ if db_type == 1:
                     if 'second_sensor_value' in entry:
                         ssv = str(entry["second_sensor_value"])
 
-                    session.execute_async(
-                        """INSERT INTO """ +
-                        "\"" + str(farm_id) + "\"" + "." + "\"" + str(serial_number) + "\"" +
-                        """ (date, time, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, second_sensor_value)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (str(entry["date"]), str(entry["time"]), str(farm_id), str(serial_number), ss, bv,
-                         int(entry["first_sensor_value"]), ssv)
-                    )
+                    try:
+                        session.execute_async(
+                            """INSERT INTO """ +
+                            "\"" + str(farm_id) + "\"" + "." + "\"" + str(serial_number) + "\"" +
+                            """ (date, time, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, second_sensor_value)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (str(entry["date"]), str(entry["time"]), str(farm_id), str(serial_number), ss, bv,
+                             int(entry["first_sensor_value"]), ssv)
+                        )
+                    except Exception:
+                        print("error while insert into")
 
             cpt = cpt + 1
             # if cpt >= 1:
