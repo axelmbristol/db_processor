@@ -114,7 +114,7 @@ if db_type == 1:
                     if 'second_sensor_value' in entry:
                         ssv = str(entry["second_sensor_value"])
 
-                    session.execute(
+                    session.execute_async(
                         """INSERT INTO """ +
                         "\"" + str(farm_id) + "\"" + "." + "\"" + str(serial_number) + "\"" +
                         """ (date, time, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, second_sensor_value)
