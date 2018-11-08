@@ -16,82 +16,115 @@ class Animal(IsDescription):
     second_sensor_value = StringCol(16)
 
 
-# print('init mongoDB...')
-# client = MongoClient('localhost', 27017)
-# db_names = client.list_database_names()
+print('init mongoDB...')
+client = MongoClient('localhost', 27017)
+db_names = client.list_database_names()
 
-# file_name = "data.h5"
-# print("purge...")
-# os.remove(file_name)
-# h5file = open_file(file_name, mode="a", title="database file")
-#
-# for farm_id in db_names:
-#     if len(farm_id) != 11:
-#         continue
-#     print("farm id :"+farm_id)
-#     db = client[farm_id]
-#     colNames = db.list_collection_names()
-#     cpt = 0
-#     colNames.sort()
-#     group = h5file.create_group("/", "_"+farm_id, 'Farm id')
-#     for colName in colNames:
-#         print(str(cpt) + "/" + str(len(colNames)) + " " + colName + "...")
-#         collection = db[colName]
-#         animals = collection.find_one()["animals"]
-#         for animal in animals:
-#             tag_data = animal["tag_data"]
-#             serial_number = tag_data[0]["serial_number"]
-#
-#             node = "_"+str(serial_number)
-#             where = "/_"+farm_id
-#             if "_"+str(serial_number) not in group:
-#                 table = h5file.create_table(group, node, Animal, "Animal id")
-#             else:
-#                 table = h5file.get_node(where, node)
-#
-#             an = table.row
-#             for entry in tag_data:
-#                 an['time'] = str(entry["time"])
-#                 an['date'] = str(entry["date"])
-#                 an['serial_number'] = int(serial_number)
-#                 if entry['signal_strength'] is not None and re.sub("[^0-9]", "", entry["signal_strength"]) != '':
-#                     an['signal_strength'] = int(re.sub("[^0-9]", "", entry["signal_strength"]))
-#                 if entry['battery_voltage'] is not None and re.sub("[^0-9]", "", entry["battery_voltage"]) != '':
-#                     an['battery_voltage'] = int(re.sub("[^0-9]", "", entry["battery_voltage"]))
-#                 an['first_sensor_value'] = int(entry["first_sensor_value"])
-#                 if 'second_sensor_value' in entry:
-#                     an['second_sensor_value'] = str(entry["second_sensor_value"])
-#                 an.append()
-#             table.flush()
-#         cpt = cpt + 1
-#         # if cpt >= 1:
-#         #     break
-# print('finished')
+db_type = 1
 
+if db_type == 0:
+    file_name = "data.h5"
+    print("purge...")
+    try:
+        os.remove(file_name)
+    except FileNotFoundError:
+        print("file not found.")
+    h5file = open_file(file_name, mode="a", title="database file")
 
-cluster = Cluster(['127.0.0.1'])
-session = cluster.connect()
+    for farm_id in db_names:
+        if len(farm_id) != 11:
+            continue
+        print("farm id :"+farm_id)
+        db = client[farm_id]
+        colNames = db.list_collection_names()
+        cpt = 0
+        colNames.sort()
+        group = h5file.create_group("/", "_"+farm_id, 'Farm id')
+        for colName in colNames:
+            print(str(cpt) + "/" + str(len(colNames)) + " " + colName + "...")
+            collection = db[colName]
+            animals = collection.find_one()["animals"]
+            for animal in animals:
+                tag_data = animal["tag_data"]
+                serial_number = tag_data[0]["serial_number"]
 
-farmId = "farmid"
-animalId = "animalId"
-session.execute("""
-    CREATE KEYSPACE IF NOT EXISTS %s
-    WITH replication = { 'class': 'SimpleStrategy', 'replication_factor': '2' }
-    """ % farmId)
+                node = "_"+str(serial_number)
+                where = "/_"+farm_id
+                if "_"+str(serial_number) not in group:
+                    table = h5file.create_table(group, node, Animal, "Animal id")
+                else:
+                    table = h5file.get_node(where, node)
 
-print("setting keyspace...")
-session.set_keyspace(farmId)
+                an = table.row
+                for entry in tag_data:
+                    an['time'] = str(entry["time"])
+                    an['date'] = str(entry["date"])
+                    an['serial_number'] = int(serial_number)
+                    if entry['signal_strength'] is not None and re.sub("[^0-9]", "", entry["signal_strength"]) != '':
+                        an['signal_strength'] = int(re.sub("[^0-9]", "", entry["signal_strength"]))
+                    if entry['battery_voltage'] is not None and re.sub("[^0-9]", "", entry["battery_voltage"]) != '':
+                        an['battery_voltage'] = int(re.sub("[^0-9]", "", entry["battery_voltage"]))
+                    an['first_sensor_value'] = int(entry["first_sensor_value"])
+                    if 'second_sensor_value' in entry:
+                        an['second_sensor_value'] = str(entry["second_sensor_value"])
+                    an.append()
+                table.flush()
+            cpt = cpt + 1
+            # if cpt >= 1:
+            #     break
+    print('finished')
 
-print("creating table...")
+if db_type == 1:
+    cluster = Cluster(['127.0.0.1'])
+    session = cluster.connect()
+    for farm_id in db_names:
+        if len(farm_id) != 11:
+            continue
+        print("farm id :" + farm_id)
+        db = client[farm_id]
+        colNames = db.list_collection_names()
+        cpt = 0
+        colNames.sort()
+        session.execute("""
+            CREATE KEYSPACE IF NOT EXISTS \"%s\"
+            WITH replication = { 'class': 'SimpleStrategy', 'replication_factor': '2' }
+            """ % farm_id)
+        print("setting keyspace...")
+        session.set_keyspace(farm_id)
+        for colName in colNames:
+            print(str(cpt) + "/" + str(len(colNames)) + " " + colName + "...")
+            collection = db[colName]
+            animals = collection.find_one()["animals"]
+            for animal in animals:
+                tag_data = animal["tag_data"]
+                serial_number = tag_data[0]["serial_number"]
 
-session.execute("CREATE TABLE if not exists %s.%s(date Text,time Text,control_station Text,serial_number Text,signal_strength Int,battery_voltage Int,first_sensor_value Int,second_sensor_value Text,PRIMARY KEY( time, date ))" % (farmId, animalId))
+                session.execute(
+                    "CREATE TABLE if not exists \"%s\".\"%s\"(date Text,time Text,control_station Text,serial_number Text,signal_strength Int,battery_voltage Int,first_sensor_value Int,second_sensor_value Text,PRIMARY KEY( time, date ))" % (
+                        farm_id, serial_number))
 
-print("insert data...")
+                for entry in tag_data:
+                    ss = -99
+                    if entry['signal_strength'] is not None and re.sub("[^0-9]", "", entry["signal_strength"]) != '':
+                        ss = int(re.sub("[^0-9]", "", entry["signal_strength"]))
+                    bv = -99
+                    if entry['battery_voltage'] is not None and re.sub("[^0-9]", "", entry["battery_voltage"]) != '':
+                        bv = int(re.sub("[^0-9]", "", entry["battery_voltage"]))
+                    ssv = ""
+                    if 'second_sensor_value' in entry:
+                        ssv = str(entry["second_sensor_value"])
 
-session.execute(
-    """
-    INSERT INTO farmid.animalId (date, time, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, second_sensor_value)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-    """,
-    ("a", "b", "c", "d", 1, 1, 1, "b")
-)
+                    session.execute(
+                        """INSERT INTO """ +
+                        "\"" + str(farm_id) + "\"" + "." + "\"" + str(serial_number) + "\"" +
+                        """ (date, time, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, second_sensor_value)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (str(entry["date"]), str(entry["time"]), str(farm_id), str(serial_number), ss, bv,
+                         int(entry["first_sensor_value"]), ssv)
+                    )
+
+            cpt = cpt + 1
+            # if cpt >= 1:
+            #     break
+    print('finished')
