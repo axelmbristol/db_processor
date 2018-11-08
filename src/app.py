@@ -83,6 +83,15 @@ print("setting keyspace...")
 session.set_keyspace(farmId)
 
 print("creating table...")
-session.execute("CREATE TABLE IF NOT EXIST users(id int PRIMARY KEY, location Text)")
 
-#session.execute("CREATE TABLE IF NOT EXIST test(date Text,time Text,control_station Text,serial_number Text,signal_strength Int,battery_voltage Int,first_sensor_value Int,second_sensor_value Text,PRIMARY KEY( time, date ))")
+session.execute("CREATE TABLE if not exists %s.%s(date Text,time Text,control_station Text,serial_number Text,signal_strength Int,battery_voltage Int,first_sensor_value Int,second_sensor_value Text,PRIMARY KEY( time, date ))" % (farmId, animalId))
+
+print("insert data...")
+
+session.execute(
+    """
+    INSERT INTO farmid.animalId (date, time, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, second_sensor_value)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """,
+    ("a", "b", "c", "d", 1, 1, 1, "b")
+)
