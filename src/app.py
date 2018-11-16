@@ -8,6 +8,7 @@ from cassandra.cluster import Cluster
 from numpy import array
 from pymongo import MongoClient
 from tables import *
+import numpy as np
 
 
 class Animal(IsDescription):
@@ -33,37 +34,47 @@ db_type = 0
 # todo remove
 # db_names = ["70101200027_small"]
 
+
+def purge_file(filename):
+    print("purge...")
+    try:
+        os.remove(filename)
+    except FileNotFoundError:
+        print("file not found.")
+
+
 if db_type == 0:
     rows = 0
-    # print("purge...")
-    # try:
-    #     os.remove("data.h5")
-    #     os.remove("data_compressed.h5")
-    # except FileNotFoundError:
-    #     print("file not found.")
-
+    farm_count = 0
     FILTERS = tables.Filters(complib='blosc', complevel=9)
-    con = True
+    con = False
     h5file = None
     if con:
+        purge_file("data_compressed_blosc.h5")
         h5file = tables.open_file("data_compressed_blosc.h5", "w", driver="H5FD_CORE", filters=FILTERS)
     else:
+        purge_file("data.h5")
         h5file = tables.open_file("data.h5", "w", driver="H5FD_CORE")
-    data = []
+
+    group = h5file.create_group("/", "data", 'Farm id')
+    table = h5file.create_table(group, "data", Animal, "Animal id")
     for farm_id in db_names:
-        # if len(farm_id) != 11:
-        #     continue
-        print("farm id :" + farm_id)
+        farm_count += 1
+        if len(farm_id) != 11:
+            continue
+        print("farm id :"+farm_id)
         db = client[farm_id]
         colNames = db.list_collection_names()
         cpt = 0
         colNames.sort()
+
         for colName in colNames:
             collection = db[colName]
             animals = collection.find_one()["animals"]
             for animal in animals:
                 tag_data = animal["tag_data"]
                 serial_number = tag_data[0]["serial_number"]
+                an = table.row
                 for entry in tag_data:
                     date_string = entry["date"] + " " + entry["time"]
                     epoch = int(datetime.strptime(date_string, '%d/%m/%y %I:%M:%S %p').timestamp())
@@ -77,24 +88,31 @@ if db_type == 0:
                     first_sensor_value = int(entry["first_sensor_value"])
                     x_min, x_max, y_min, y_max, z_min, z_max = 0, 0, 0, 0, 0, 0
                     ssv = ""
-                    if 'second_sensor_value' in entry:
-                        ssv = str(entry["second_sensor_value"])
+                    if "second_sensor_values_xyz" in entry and entry["second_sensor_values_xyz"] is not None:
+                        ssv = str(entry["second_sensor_values_xyz"])
                         split = ssv.split(":")
-                        x_min, x_max, y_min, y_max, z_min, z_max = int(split[0]), int(split[1]), int(split[2]), int(split[3]), int(split[4]), int(split[5])
-                        print(x_min, x_max, y_min, y_max, z_min, z_max)
+                        # print(split)
+                        if len(split) == 6:
+                            x_min, x_max, y_min, y_max, z_min, z_max = int(split[0]), int(split[1]), int(split[2]), int(split[3]), int(split[4]), int(split[5])
+                        # print(x_min, x_max, y_min, y_max, z_min, z_max)
                     rows += 1
-                    a = array([epoch, serial_number, signal_strength, battery_voltage, first_sensor_value, x_min, y_min, z_min, x_max, y_max, z_max])
-                    data.append(a)
-                    del a
+                    an['epoch'] = epoch
+                    an['serial_number'] = int(serial_number)
+                    an['signal_strength'] = signal_strength
+                    an['battery_voltage'] = battery_voltage
+                    an['first_sensor_value'] = first_sensor_value
+                    an['x_min'] = x_min
+                    an['y_min'] = y_min
+                    an['z_min'] = z_min
+                    an['x_max'] = x_max
+                    an['y_max'] = y_max
+                    an['z_max'] = z_max
+                    an.append()
+                table.flush()
             cpt = cpt + 1
-            print(str(cpt) + "/" + str(len(colNames)) + " " + colName + "...")
+            print(str(farm_count) + "/" + str(len(db_names)) + " " + str(cpt) + "/" + str(len(colNames)) + " " + colName + "...")
             # if cpt >= 1:
             #     break
-
-    print("creating carray in h5...")
-    h5file.create_carray(h5file.root, "array", obj=data)
-    del data
-    h5file.close()
 
     print("finished added %s rows to pytable" % str(rows))
 
