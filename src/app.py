@@ -175,27 +175,28 @@ if db_type == 0:
         #group collection by day
         collections = []
         group = []
-        for index, collection_name in enumerate(colNames):
-            if len(collection_name.split("_")) == 5:
-                group.append(collection_name)
+        for index, collection_names_in_day in enumerate(colNames):
+            if len(collection_names_in_day.split("_")) == 5:
+                group.append(str(collection_names_in_day))
                 continue
             if len(group) > 0:
                 collections.append(group)
                 group = []
             else:
-                collections.append([collection_name])
+                collections.append([str(collection_names_in_day)])
 
-        for index, collection_name in enumerate(colNames):
+        for index, collection_names_in_day in enumerate(collections):
+
             collection_count = collection_count + 1
             collection_count_m = collection_count_m + 1
             collection_count_w = collection_count_w + 1
+            animals = []
 
-            collection = db[collection_name]
-            animals = collection.find_one()["animals"]
+            for collection in collection_names_in_day:
+                a = db[collection].find_one()["animals"]
+                animals.extend(a)
 
-            next_ = colNames[index + 1]
-            if len(next_.split("_")) == 5:
-                animals_next = db[next_].find_one()["animals"]
+
 
             for animal in animals:
                 tag_data_raw = animal["tag_data"]
@@ -219,7 +220,8 @@ if db_type == 0:
                 del data_w
                 data_w = []
 
-            print(str(farm_count) + "/" + str(len(db_names)) + " " + str(collection_count) + "/" + str(len(colNames)) + " " + collection_name + "...")
+            del animals
+            print(str(farm_count) + "/" + str(len(db_names)) + " " + str(collection_count) + "/" + str(len(colNames)) + " " + ''.join(collection_names_in_day) + "...")
             # if cpt >= 1:
             #     break
 
@@ -272,8 +274,8 @@ if db_type == 1:
 
         exit(0)
 
-        for collection_name in colNames:
-            collection = db[collection_name]
+        for collection_names_in_day in colNames:
+            collection = db[collection_names_in_day]
             animals = collection.find_one()["animals"]
             for animal in animals:
                 tag_data = animal["tag_data"]
@@ -327,5 +329,5 @@ if db_type == 1:
             collection_count = collection_count + 1
             # if cpt >= 1:
             #     break
-            print(str(collection_count) + "/" + str(len(colNames)) + " " + collection_name + "...")
+            print(str(collection_count) + "/" + str(len(colNames)) + " " + collection_names_in_day + "...")
     print("finished added %s rows to cassandra" % str(rows))
