@@ -7,6 +7,8 @@ import tables
 from cassandra.cluster import Cluster
 from pymongo import MongoClient
 from tables import *
+import os.path
+from collections import defaultdict
 
 
 class Animal(IsDescription):
@@ -137,7 +139,27 @@ def add_record_to_table_sum(table, data):
     table.flush()
 
 
-if db_type == 0:
+def process_raw_file():
+    h5file = tables.open_file("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\70091100056_raw.h5", "r")
+    data = h5file.root.resolution_f.data
+    list_raw = [(x['timestamp'], x['serial_number'], x['signal_strength'], x['battery_voltage'], x['first_sensor_value']) for x in data.iterrows()]
+    groups = defaultdict(list)
+
+    for obj in list_raw:
+        groups[obj[1]].append(obj)
+
+    grouped_list = list(groups.values())
+    grouped_list_u = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
+    size_ = len(grouped_list_u)
+
+    for animal_group in grouped_list_u:
+        animal_s = sorted([animal_group], key=lambda x: x[0])
+        print(animal_s)
+
+    print("finished processing raw file.")
+
+
+def generate_raw_file():
     rows = 0
     farm_count = 0
     FILTERS = tables.Filters(complib='blosc', complevel=9)
@@ -149,85 +171,55 @@ if db_type == 0:
         print("farm id :"+farm_id)
         if compression:
             purge_file(farm_id+"_compressed.h5")
-            h5file = tables.open_file(farm_id+"_data_compressed_blosc.h5", "w", driver="H5FD_CORE", filters=FILTERS)
+            h5file = tables.open_file(farm_id+"_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=FILTERS)
         else:
-            purge_file(farm_id+".h5")
-            h5file = tables.open_file(farm_id+".h5", "w", driver="H5FD_CORE")
+            purge_file(farm_id+"_raw.h5")
+            h5file = tables.open_file(farm_id+"_raw.h5", "w", driver="H5FD_CORE")
 
         group_f = h5file.create_group("/", "resolution_f", 'raw data')
-        group_m = h5file.create_group("/", "resolution_m", 'resolution per month')
-        group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
-        group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
+        # group_m = h5file.create_group("/", "resolution_m", 'resolution per month')
+        # group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
+        # group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
         table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
-        table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
-        table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
-        table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
+        # table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
+        # table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
+        # table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
 
         db = client[farm_id]
         colNames = db.list_collection_names()
         colNames.sort()
-        collection_count_w = 0
-        collection_count_m = 0
         collection_count = 0
-        data_w = []
-        data_m = []
 
-        #group collection by day
-        collections = []
-        group = []
-        for index, collection_names_in_day in enumerate(colNames):
-            if len(collection_names_in_day.split("_")) == 5:
-                group.append(str(collection_names_in_day))
-                continue
-            if len(group) > 0:
-                collections.append(group)
-                group = []
-            else:
-                collections.append([str(collection_names_in_day)])
-
-        for index, collection_names_in_day in enumerate(collections):
-
-            collection_count = collection_count + 1
-            collection_count_m = collection_count_m + 1
-            collection_count_w = collection_count_w + 1
-            animals = []
-
-            for collection in collection_names_in_day:
-                a = db[collection].find_one()["animals"]
-                animals.extend(a)
-
-
+        for collection in colNames:
+            collection_count += 1
+            animals = db[collection].find_one()["animals"]
 
             for animal in animals:
                 tag_data_raw = animal["tag_data"]
                 #removes duplicates
                 tag_data = [i for n, i in enumerate(tag_data_raw) if i not in tag_data_raw[n + 1:]]
                 add_record_to_table(table_f, tag_data)
-                add_record_to_table_sum(table_d, tag_data)
                 rows += len(tag_data)
-                data_m.extend(tag_data)
-                data_w.extend(tag_data)
-
-            if collection_count_m == 30:
-                collection_count_m = 0
-                add_record_to_table_sum(table_m, data_m)
-                del data_m
-                data_m = []
-
-            if collection_count_w == 7:
-                collection_count_w = 0
-                add_record_to_table_sum(table_w, data_w)
-                del data_w
-                data_w = []
 
             del animals
-            print(str(farm_count) + "/" + str(len(db_names)) + " " + str(collection_count) + "/" + str(len(colNames)) + " " + ''.join(collection_names_in_day) + "...")
+            print(str(farm_count) + "/" + str(len(db_names)) + " " + str(collection_count) + "/" + str(len(colNames)) + " " + collection + "...")
             # if cpt >= 1:
             #     break
 
         break
 
     print("finished added %s rows to pytable" % str(rows))
+    print("finished generating raw file.")
+
+if db_type == 0:
+    if os.path.isfile("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\70091100056_raw.h5"):
+        print("exist.")
+        process_raw_file()
+    else:
+        print("does not exist.")
+        generate_raw_file()
+        process_raw_file()
+
 
 if db_type == 1:
     rows = 0
