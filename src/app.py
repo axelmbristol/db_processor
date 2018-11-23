@@ -9,6 +9,8 @@ from pymongo import MongoClient
 from tables import *
 import os.path
 from collections import defaultdict
+import dateutil.relativedelta
+import time
 
 
 class Animal(IsDescription):
@@ -101,47 +103,73 @@ def add_record_to_table(table, data):
     table.flush()
 
 
-def add_record_to_table_sum(table, data):
-    serial = int(data[0]["serial_number"])
+def add_record_to_table_sum(table, timestamp_f, serial_number_f, signal_strenght_max, signal_strenght_min, battery_voltage_min, activity_level_avg):
     table_row = table.row
-    timestamp = get_epoch_from_datetime(data[0]["date"], data[0]["time"])
-    signal_strength_array = []
-    activity_level_array = []
-    battery_voltage_array = []
-
-    for record in data:
-        signal_strength = -1
-        battery_voltage = -1
-        if record['signal_strength'] is not None and re.sub("[^0-9]", "", record["signal_strength"]) != '':
-            signal_strength = - int(re.sub("[^0-9]", "", record["signal_strength"]))
-        if record['battery_voltage'] is not None and re.sub("[^0-9]", "", record["battery_voltage"]) != '':
-            battery_voltage = int(re.sub("[^0-9]", "", record["battery_voltage"]))
-        else:
-            try:
-                battery_voltage = int(record["battery_voltage"], 16)
-            except (ValueError, TypeError) as ex:
-                print(ex)
-        first_sensor_value = int(record["first_sensor_value"])
-        signal_strength_array.append(signal_strength)
-        battery_voltage_array.append(battery_voltage)
-        activity_level_array.append(first_sensor_value)
-
-    table_row['timestamp'] = timestamp
-    table_row['serial_number'] = int(serial)
-    table_row['signal_strength_min'] = min(signal_strength_array)
-    table_row['signal_strength_max'] = max(signal_strength_array)
-    table_row['battery_voltage'] = min(battery_voltage_array)
-    table_row['first_sensor_value'] = sum(activity_level_array)
+    table_row['timestamp'] = int(timestamp_f)
+    table_row['serial_number'] = int(serial_number_f)
+    table_row['signal_strength_min'] = signal_strenght_min
+    table_row['signal_strength_max'] = signal_strenght_max
+    table_row['battery_voltage'] = battery_voltage_min
+    table_row['first_sensor_value'] = activity_level_avg
     table_row.append()
-    del activity_level_array
-    del battery_voltage_array
-    del signal_strength_array
     table.flush()
 
 
-def process_raw_file():
-    h5file = tables.open_file("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\70091100056_raw.h5", "r")
-    data = h5file.root.resolution_f.data
+def add_record_to_table_single(table, timestamp_s, serial_number_s, signal_strenght_s, battery_voltage_s, activity_level_s):
+    table_row = table.row
+    table_row['timestamp'] = int(timestamp_s)
+    table_row['serial_number'] = int(serial_number_s)
+    table_row['signal_strength'] = signal_strenght_s
+    table_row['battery_voltage'] = battery_voltage_s
+    table_row['first_sensor_value'] = activity_level_s
+    table_row.append()
+    table.flush()
+
+
+def is_same_day(time_initial, time_next):
+    dt1 = datetime.fromtimestamp(time_initial)
+    dt2 = datetime.fromtimestamp(time_next)
+    return dt1.day == dt2.day
+
+
+def is_same_month(time_initial, time_next):
+    dt1 = datetime.fromtimestamp(time_initial)
+    dt2 = datetime.fromtimestamp(time_next)
+    return dt1.month == dt2.month
+
+
+def get_elapsed_days(time_initial, time_next):
+    dt1 = datetime.fromtimestamp(time_initial)
+    dt2 = datetime.fromtimestamp(time_next)
+    rd = dateutil.relativedelta.relativedelta(dt2, dt1)
+    return rd.days
+
+
+def get_elapsed_hours(time_initial, time_next):
+    dt1 = datetime.fromtimestamp(time_initial)
+    dt2 = datetime.fromtimestamp(time_next)
+    rd = dateutil.relativedelta.relativedelta(dt2, dt1)
+    return rd.hours
+
+
+def get_elapsed_minutes(time_initial, time_next):
+    dt1 = datetime.fromtimestamp(time_initial)
+    dt2 = datetime.fromtimestamp(time_next)
+    rd = dateutil.relativedelta.relativedelta(dt2, dt1)
+    return rd.minutes
+
+
+def get_elapsed_time_string(time_initial, time_next):
+    dt1 = datetime.fromtimestamp(time_initial)
+    dt2 = datetime.fromtimestamp(time_next)
+    rd = dateutil.relativedelta.relativedelta(dt2, dt1)
+    return '%02d:%02d:%02d:%02d' % (rd.days, rd.hours, rd.minutes, rd.seconds)
+
+
+def process_raw_file(farm_id):
+    start_time = time.time()
+    h5file_raw = tables.open_file("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\" + farm_id + "_raw.h5", "r")
+    data = h5file_raw.root.resolution_f.data
     list_raw = [(x['timestamp'], x['serial_number'], x['signal_strength'], x['battery_voltage'], x['first_sensor_value']) for x in data.iterrows()]
     groups = defaultdict(list)
 
@@ -149,76 +177,202 @@ def process_raw_file():
         groups[obj[1]].append(obj)
 
     grouped_list = list(groups.values())
-    grouped_list_u = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
-    size_ = len(grouped_list_u)
+    animal_list_grouped_by_serialn = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
 
-    for animal_group in grouped_list_u:
-        animal_s = sorted([animal_group], key=lambda x: x[0])
-        print(animal_s)
+    #init new .h5 file for receiving sorted data
+    FILTERS = tables.Filters(complib='blosc', complevel=9)
+    compression = False
+    if compression:
+        purge_file(farm_id + "_data_compressed_blosc.h5")
+        h5file = tables.open_file(farm_id + "_data_compressed_blosc.h5", "w", driver="H5FD_CORE", filters=FILTERS)
+    else:
+        purge_file(farm_id + ".h5")
+        h5file = tables.open_file(farm_id + ".h5", "w", driver="H5FD_CORE")
+
+    group_f = h5file.create_group("/", "resolution_f", 'raw data')
+    group_m = h5file.create_group("/", "resolution_m", 'resolution per month')
+    group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
+    group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
+    group_h = h5file.create_group("/", "resolution_h", 'resolution per hour')
+    group_h_h = h5file.create_group("/", "resolution_h_h", 'resolution per 30 minutes')
+
+    table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
+    table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
+    table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
+    table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
+    table_h = h5file.create_table(group_h, "data", Animal2, "Animal data activity level averaged by hour")
+    table_h_h = h5file.create_table(group_h_h, "data", Animal2, "Animal data activity level averaged by 30 minutes")
+    cpt_animal_group, cpt_individual = 0, 0
+    for animal_group in animal_list_grouped_by_serialn:
+        cpt_animal_group += 1
+        animal_group_s = sorted([animal_group], key=lambda x: x[0])
+        activity_level_array_h_h, activity_level_array_h, activity_level_array_d, activity_level_array_w, activity_level_array_m = [], [], [], [], []
+        battery_voltage_array_h_h, battery_voltage_array_h, battery_voltage_array_d, battery_voltage_array_w, battery_voltage_array_m = [], [], [], [], []
+        signal_strength_array_h_h, signal_strength_array_h, signal_strength_array_d, signal_strength_array_w, signal_strength_array_m = [], [], [], [], []
+        time_initial_h_h, time_initial_h, time_initial_d, time_initial_w, time_initial_m, time_next = 0, 0, 0, 0, 0, 0
+        time_initial_s_h_h, time_initial_s_h, time_initial_s_d, time_initial_s_w, time_initial_s_m, time_next_s = False, False, False, False, False, False
+        for individual in animal_group_s:
+            cpt_individual += 1
+            cpt_record = 0
+            print(str(cpt_animal_group) + "/" + str(len(animal_list_grouped_by_serialn)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
+            for record in individual:
+                cpt_record += 1
+                #print(str(cpt_animal_group) + "/" + str(len(animal_list_grouped_by_serialn)) + " " + str(cpt_record) + "/" + str(len(individual)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
+                add_record_to_table_single(table_f, record[0], record[1], record[2], record[3], record[4])
+                if time_initial_s_h_h is False:
+                    time_initial_s_h_h = True
+                    time_initial_h_h = record[0]
+                if time_initial_s_h is False:
+                    time_initial_s_h = True
+                    time_initial_h = record[0]
+                if time_initial_s_d is False:
+                    time_initial_s_d = True
+                    time_initial_d = record[0]
+                if time_initial_s_w is False:
+                    time_initial_s_w = True
+                    time_initial_w = record[0]
+                if time_initial_s_m is False:
+                    time_initial_s_m = True
+                    time_initial_m = record[0]
+                time_next = record[0]
+                activity_level_array_h_h.append(record[4])
+                battery_voltage_array_h_h.append(record[3])
+                signal_strength_array_h_h.append(record[2])
+                activity_level_array_h.append(record[4])
+                battery_voltage_array_h.append(record[3])
+                signal_strength_array_h.append(record[2])
+                activity_level_array_d.append(record[4])
+                battery_voltage_array_d.append(record[3])
+                signal_strength_array_d.append(record[2])
+                activity_level_array_w.append(record[4])
+                battery_voltage_array_w.append(record[3])
+                signal_strength_array_w.append(record[2])
+                activity_level_array_m.append(record[4])
+                battery_voltage_array_m.append(record[3])
+                signal_strength_array_m.append(record[2])
+
+                elapsed_days_h_h = get_elapsed_minutes(time_initial_d, time_next)
+                if elapsed_days_h_h > 30:
+                    time_initial_s_h = False
+                    activity_level_array_h_h, battery_voltage_array_h_h, signal_strength_array_h_h = [], [], []
+                if elapsed_days_h_h == 30:
+                    time_initial_s_h_h = False
+                    signal_strength_min = min(signal_strength_array_h_h)
+                    signal_strength_max = max(signal_strength_array_h_h)
+                    battery_voltage_min = min(battery_voltage_array_h_h)
+                    activity_level_avg = sum(activity_level_array_h_h)
+                    add_record_to_table_sum(table_h_h, time_initial_h_h,  record[1], signal_strength_max, signal_strength_min, battery_voltage_min, activity_level_avg)
+                    activity_level_array_h_h, battery_voltage_array_h_h, signal_strength_array_h_h = [], [], []
+
+                elapsed_days_h = get_elapsed_hours(time_initial_d, time_next)
+                if elapsed_days_h > 1:
+                    time_initial_s_h = False
+                    activity_level_array_h, battery_voltage_array_h, signal_strength_array_h = [], [], []
+                if elapsed_days_h == 1:
+                    time_initial_s_h = False
+                    signal_strength_min = min(signal_strength_array_h)
+                    signal_strength_max = max(signal_strength_array_h)
+                    battery_voltage_min = min(battery_voltage_array_h)
+                    activity_level_avg = sum(activity_level_array_h)
+                    add_record_to_table_sum(table_h, time_initial_h,  record[1], signal_strength_max, signal_strength_min, battery_voltage_min, activity_level_avg)
+                    activity_level_array_h, battery_voltage_array_h, signal_strength_array_h = [], [], []
+
+                # elapsed_days_d = get_elapsed_days(time_initial_d, time_next)
+                # if elapsed_days_d > 1:
+                #     time_initial_s_d = False
+                #     activity_level_array_d, battery_voltage_array_d, signal_strength_array_d = [], [], []
+                if not is_same_day(time_initial_d, time_next):
+                    time_initial_s_d = False
+                    signal_strength_min = min(signal_strength_array_d)
+                    signal_strength_max = max(signal_strength_array_d)
+                    battery_voltage_min = min(battery_voltage_array_d)
+                    activity_level_avg = sum(activity_level_array_d)
+                    add_record_to_table_sum(table_d, time_initial_d,  record[1], signal_strength_max, signal_strength_min, battery_voltage_min, activity_level_avg)
+                    activity_level_array_d, battery_voltage_array_d, signal_strength_array_d = [], [], []
+
+                elapsed_days_w = get_elapsed_days(time_initial_w, time_next)
+                if elapsed_days_w > 7:
+                    time_initial_s_w = False
+                    activity_level_array_w, battery_voltage_array_w, signal_strength_array_w = [], [], []
+                if elapsed_days_w == 7:
+                    time_initial_s_w = False
+                    signal_strength_min = min(signal_strength_array_w)
+                    signal_strength_max = max(signal_strength_array_w)
+                    battery_voltage_min = min(battery_voltage_array_w)
+                    activity_level_avg = sum(activity_level_array_w)
+                    add_record_to_table_sum(table_w, time_initial_w,  record[1], signal_strength_max, signal_strength_min, battery_voltage_min, activity_level_avg)
+                    activity_level_array_w, battery_voltage_array_w, signal_strength_array_w = [], [], []
+
+                elapsed_days_m = get_elapsed_days(time_initial_m, time_next)
+                if elapsed_days_m > 30:
+                    time_initial_s_m = False
+                    activity_level_array_m, battery_voltage_array_m, signal_strength_array_m = [], [], []
+                if elapsed_days_m == 30:
+                    time_initial_s_m = False
+                    signal_strength_min = min(signal_strength_array_m)
+                    signal_strength_max = max(signal_strength_array_m)
+                    battery_voltage_min = min(battery_voltage_array_m)
+                    activity_level_avg = sum(activity_level_array_m)
+                    add_record_to_table_sum(table_m, time_initial_m,  record[1], signal_strength_max, signal_strength_min, battery_voltage_min, activity_level_avg)
+                    activity_level_array_m, battery_voltage_array_m, signal_strength_array_m = [], [], []
 
     print("finished processing raw file.")
 
 
-def generate_raw_file():
+def generate_raw_file(farm_id):
+    print("start generating raw file...")
     rows = 0
     farm_count = 0
     FILTERS = tables.Filters(complib='blosc', complevel=9)
     compression = False
     h5file = None
+    farm_count += 1
+    print("farm id :"+farm_id)
+    if compression:
+        purge_file(farm_id+"_data_compressed_blosc_raw.h5")
+        h5file = tables.open_file(farm_id+"_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=FILTERS)
+    else:
+        purge_file(farm_id+"_raw.h5")
+        h5file = tables.open_file(farm_id+"_raw.h5", "w", driver="H5FD_CORE")
 
-    for farm_id in by_size(db_names, 11):
-        farm_count += 1
-        print("farm id :"+farm_id)
-        if compression:
-            purge_file(farm_id+"_compressed.h5")
-            h5file = tables.open_file(farm_id+"_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=FILTERS)
-        else:
-            purge_file(farm_id+"_raw.h5")
-            h5file = tables.open_file(farm_id+"_raw.h5", "w", driver="H5FD_CORE")
+    group_f = h5file.create_group("/", "resolution_f", 'raw data')
+    table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
 
-        group_f = h5file.create_group("/", "resolution_f", 'raw data')
-        # group_m = h5file.create_group("/", "resolution_m", 'resolution per month')
-        # group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
-        # group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
-        table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
-        # table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
-        # table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
-        # table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
+    db = client[farm_id]
+    colNames = db.list_collection_names()
+    colNames.sort()
+    collection_count = 0
 
-        db = client[farm_id]
-        colNames = db.list_collection_names()
-        colNames.sort()
-        collection_count = 0
+    for collection in colNames:
+        collection_count += 1
+        animals = db[collection].find_one()["animals"]
 
-        for collection in colNames:
-            collection_count += 1
-            animals = db[collection].find_one()["animals"]
+        for animal in animals:
+            tag_data_raw = animal["tag_data"]
+            #removes duplicates
+            tag_data = [i for n, i in enumerate(tag_data_raw) if i not in tag_data_raw[n + 1:]]
+            add_record_to_table(table_f, tag_data)
+            rows += len(tag_data)
 
-            for animal in animals:
-                tag_data_raw = animal["tag_data"]
-                #removes duplicates
-                tag_data = [i for n, i in enumerate(tag_data_raw) if i not in tag_data_raw[n + 1:]]
-                add_record_to_table(table_f, tag_data)
-                rows += len(tag_data)
-
-            del animals
-            print(str(farm_count) + "/" + str(len(db_names)) + " " + str(collection_count) + "/" + str(len(colNames)) + " " + collection + "...")
-            # if cpt >= 1:
-            #     break
-
-        break
+        del animals
+        print(str(farm_count) + "/" + str(len(db_names)) + " " + str(collection_count) + "/" + str(len(colNames)) + " " + collection + "...")
+        # if cpt >= 1:
+        #     break
 
     print("finished added %s rows to pytable" % str(rows))
     print("finished generating raw file.")
 
+
 if db_type == 0:
-    if os.path.isfile("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\70091100056_raw.h5"):
-        print("exist.")
-        process_raw_file()
-    else:
-        print("does not exist.")
-        generate_raw_file()
-        process_raw_file()
+    farms = by_size(db_names, 11)
+    for farm_id in farms:
+        if os.path.isfile("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\"+farm_id+"_raw.h5"):
+            print("exist.")
+            process_raw_file(farm_id)
+        else:
+            print("does not exist.")
+            generate_raw_file(farm_id)
+            process_raw_file(farm_id)
 
 
 if db_type == 1:
