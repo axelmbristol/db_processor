@@ -18,6 +18,7 @@ import xlrd
 
 class Animal(IsDescription):
     timestamp = Int32Col()
+    control_station = Int64Col()
     serial_number = Int64Col()
     signal_strength = Int16Col()
     battery_voltage = Int16Col()
@@ -121,15 +122,16 @@ def add_record_to_table_sum(table, timestamp_f, serial_number_f, signal_strenght
     #     print("sum flush...")
 
 
-def add_record_to_table_single(table, timestamp_s, serial_number_s, signal_strenght_s, battery_voltage_s,
+def add_record_to_table_single(table, timestamp_s, control_station, serial_number_s, signal_strenght_s, battery_voltage_s,
                                activity_level_s):
     table_row = table.row
-    table_row['timestamp'] = int(timestamp_s)
-    table_row['serial_number'] = int(serial_number_s)
+    table_row['timestamp'] = timestamp_s
+    table_row['control_station'] = control_station
+    table_row['serial_number'] = serial_number_s
     table_row['signal_strength'] = signal_strenght_s
     table_row['battery_voltage'] = battery_voltage_s
     table_row['first_sensor_value'] = activity_level_s
-    print(timestamp_s, serial_number_s, signal_strenght_s, battery_voltage_s, activity_level_s, table.size_in_memory)
+    # print(timestamp_s, serial_number_s, signal_strenght_s, battery_voltage_s, activity_level_s, table.size_in_memory)
     table_row.append()
     # if table.size_in_memory >= 100999999:
     #     table.flush()
@@ -464,11 +466,11 @@ def generate_raw_files_from_xlsx(directory_path):
     print("start generating raw file...")
     compression = False
     if compression:
-        purge_file("_data_compressed_blosc_raw.h5")
-        h5file = tables.open_file("_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=tables.Filters(complib='blosc', complevel=9))
+        purge_file("raw_data_compressed_blosc_raw.h5")
+        h5file = tables.open_file("raw_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=tables.Filters(complib='blosc', complevel=9))
     else:
-        purge_file("_raw.h5")
-        h5file = tables.open_file("_raw.h5", "w", driver="H5FD_CORE")
+        purge_file("raw_data.h5")
+        h5file = tables.open_file("raw_data.h5", "w", driver="H5FD_CORE")
 
     group_f = h5file.create_group("/", "resolution_f", 'raw data')
     table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
@@ -515,12 +517,12 @@ def generate_raw_files_from_xlsx(directory_path):
                 print(
                     "row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d"
                     % (valid_rows, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value))
-                add_record_to_table_single(table_f, epoch, serial_number, signal_strength, battery_voltage, first_sensor_value)
+                add_record_to_table_single(table_f, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value)
                 valid_rows += 1
             except Exception as exception:
                 print(exception)
+        table_f.flush()
         del book
-    table_f.flush()
 
 
 def generate_raw_file(farm_id):
