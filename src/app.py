@@ -457,6 +457,7 @@ def convert_excel_time(t, hour24=True):
 
 def generate_raw_files_from_xlsx(directory_path):
     print("start readind xls files...")
+    log_file = open("log.txt", "a")
     os.chdir(directory_path)
     file_paths = [val for sublist in
                   [[os.path.join(i[0], j) for j in i[2] if j.endswith('.xlsx')] for i in os.walk(directory_path)] for
@@ -475,6 +476,7 @@ def generate_raw_files_from_xlsx(directory_path):
     group_f = h5file.create_group("/", "resolution_f", 'raw data')
     table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
     valid_rows = 0
+    record_log = ""
     for path in file_paths:
         print("loading file in memory for reading...")
         print(path)
@@ -514,13 +516,14 @@ def generate_raw_files_from_xlsx(directory_path):
                 signal_strength = int(str(row_values[signal_strength_col_index]).replace("@", "").split('.')[0])
                 battery_voltage = int(str(row_values[battery_voltage_col_index]).split('.')[0], 16)
                 first_sensor_value = int(row_values[first_sensor_value_col_index])
-                print(
-                    "row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d"
-                    % (valid_rows, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value))
+                record_log = "row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d" % (valid_rows, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value)
+                print(record_log)
                 add_record_to_table_single(table_f, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value)
                 valid_rows += 1
             except Exception as exception:
                 print(exception)
+                log = "%s---%s---%s\n" % (str(exception), path, record_log)
+                log_file.write(log)
         table_f.flush()
         del book
 
