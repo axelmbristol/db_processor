@@ -461,31 +461,66 @@ def generate_raw_files_from_xlsx(directory_path):
                   val in sublist]
     print("founded %d files" % len(file_paths))
     print(file_paths)
+    print("start generating raw file...")
+    compression = False
+    if compression:
+        purge_file("_data_compressed_blosc_raw.h5")
+        h5file = tables.open_file("_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=tables.Filters(complib='blosc', complevel=9))
+    else:
+        purge_file("_raw.h5")
+        h5file = tables.open_file("_raw.h5", "w", driver="H5FD_CORE")
+
+    group_f = h5file.create_group("/", "resolution_f", 'raw data')
+    table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
+    valid_rows = 0
     for path in file_paths:
         print("loading file in memory for reading...")
         print(path)
-        book = xlrd.open_workbook(path, "rb")
+        book = xlrd.open_workbook(path)
         sheet = book.sheet_by_index(0)
         print("start reading...")
+        found_col_index = False
         for row_index in range(0, sheet.nrows):
             try:
-                row_values = [sheet.cell(row_index, col_index).value for col_index in range(0, 9)]
+                row_values = [sheet.cell(row_index, col_index).value for col_index in range(0, sheet.ncols)]
                 print(path)
                 print(row_values)
-                date_string = xl_date_to_date(row_values[0], book) + " " + convert_excel_time(row_values[1])
+                #find index of each column
+                if not found_col_index:
+                    try:
+                        date_col_index = row_values.index('Date')
+                        time_col_index = row_values.index('Time')
+                        control_station_col_index = row_values.index('Control station')
+                        serial_number_col_index = row_values.index('Tag serial number')
+                        signal_strength_col_index = row_values.index('Signal strength')
+                        battery_voltage_col_index = row_values.index('Battery voltage')
+                        first_sensor_value_col_index = row_values.index('First sensor value')
+                        found_col_index = True
+                    except ValueError:
+                        date_col_index = 0
+                        time_col_index = 1
+                        control_station_col_index = 2
+                        serial_number_col_index = 3
+                        signal_strength_col_index = 4
+                        battery_voltage_col_index = 5
+                        first_sensor_value_col_index = 6
+
+                date_string = xl_date_to_date(row_values[date_col_index], book) + " " + convert_excel_time(row_values[time_col_index])
                 epoch = int(datetime.strptime(date_string, '%d/%m/%Y %I:%M:%S %p').timestamp())
-                control_station = int(row_values[2])
-                serial_number = int(row_values[3])
-                signal_strength = int(row_values[4])
-                battery_voltage = int(row_values[5])
-                first_sensor_value = int(row_values[6])
+                control_station = int(row_values[control_station_col_index])
+                serial_number = int(row_values[serial_number_col_index])
+                signal_strength = int(str(row_values[signal_strength_col_index]).replace("@", "").split('.')[0])
+                battery_voltage = int(str(row_values[battery_voltage_col_index]).split('.')[0], 16)
+                first_sensor_value = int(row_values[first_sensor_value_col_index])
                 print(
-                    "epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d"
-                    % (epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value))
+                    "row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d"
+                    % (valid_rows, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value))
+                add_record_to_table_single(table_f, epoch, serial_number, signal_strength, battery_voltage, first_sensor_value)
+                valid_rows += 1
             except Exception as exception:
                 print(exception)
-
         del book
+    table_f.flush()
 
 
 def generate_raw_file(farm_id):
