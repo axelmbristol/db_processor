@@ -51,7 +51,7 @@ def by_size(words, size):
 
 
 def purge_file(filename):
-    print("purge...")
+    print("purge %s..." % filename)
     try:
         os.remove(filename)
     except FileNotFoundError:
@@ -449,14 +449,22 @@ def convert_excel_time(t, hour24=True):
     if hour24:
         if hours > 12:
             hours -= 12
-            return "%02d:%02d:%02d PM" % (hours, minutes, seconds)
+            if hours == 0:
+                hours = 12
+            return "%d:%02d:%02d PM" % (hours, minutes, seconds)
         else:
-            return "%02d:%02d:%02d AM" % (hours, minutes, seconds)
+            if hours == 0:
+                hours = 12
+            return "%d:%02d:%02d AM" % (hours, minutes, seconds)
+    if hours == 0:
+        hours = 12
     return "%d:%d:%d" % (hours, minutes, seconds)
 
 
 def generate_raw_files_from_xlsx(directory_path):
+    start_time = time.time()
     print("start readind xls files...")
+    purge_file("log.txt")
     log_file = open("log.txt", "a")
     os.chdir(directory_path)
     file_paths = [val for sublist in
@@ -473,59 +481,70 @@ def generate_raw_files_from_xlsx(directory_path):
         purge_file("raw_data.h5")
         h5file = tables.open_file("raw_data.h5", "w", driver="H5FD_CORE")
 
-    group_f = h5file.create_group("/", "resolution_f", 'raw data')
-    table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
+    # group_f = h5file.create_group("/", "resolution_f", 'raw data')
+    table_f = h5file.create_table("/", "data", Animal, "Animal data in full resolution")
     valid_rows = 0
-    record_log = ""
-    for path in file_paths:
-        print("loading file in memory for reading...")
-        print(path)
-        book = xlrd.open_workbook(path)
-        sheet = book.sheet_by_index(0)
-        print("start reading...")
-        found_col_index = False
-        for row_index in range(0, sheet.nrows):
-            try:
-                row_values = [sheet.cell(row_index, col_index).value for col_index in range(0, sheet.ncols)]
-                print(path)
-                print(row_values)
-                #find index of each column
-                if not found_col_index:
-                    try:
-                        date_col_index = row_values.index('Date')
-                        time_col_index = row_values.index('Time')
-                        control_station_col_index = row_values.index('Control station')
-                        serial_number_col_index = row_values.index('Tag serial number')
-                        signal_strength_col_index = row_values.index('Signal strength')
-                        battery_voltage_col_index = row_values.index('Battery voltage')
-                        first_sensor_value_col_index = row_values.index('First sensor value')
-                        found_col_index = True
-                    except ValueError:
-                        date_col_index = 0
-                        time_col_index = 1
-                        control_station_col_index = 2
-                        serial_number_col_index = 3
-                        signal_strength_col_index = 4
-                        battery_voltage_col_index = 5
-                        first_sensor_value_col_index = 6
+    for curr_file, path in enumerate(file_paths):
+        try:
+            record_log = ""
+            print("loading file in memory for reading...")
+            print(path)
+            book = xlrd.open_workbook(path)
+            sheet = book.sheet_by_index(0)
+            print("start reading...")
+            found_col_index = False
+            for row_index in range(0, sheet.nrows):
+                try:
+                    row_values = [sheet.cell(row_index, col_index).value for col_index in range(0, sheet.ncols)]
+                    # print(path)
+                    # print(row_values)
+                    # find index of each column
+                    if not found_col_index:
+                        try:
+                            date_col_index = row_values.index('Date')
+                            time_col_index = row_values.index('Time')
+                            control_station_col_index = row_values.index('Control station')
+                            serial_number_col_index = row_values.index('Tag serial number')
+                            signal_strength_col_index = row_values.index('Signal strength')
+                            battery_voltage_col_index = row_values.index('Battery voltage')
+                            first_sensor_value_col_index = row_values.index('First sensor value')
+                            found_col_index = True
+                        except ValueError:
+                            date_col_index = 0
+                            time_col_index = 1
+                            control_station_col_index = 2
+                            serial_number_col_index = 3
+                            signal_strength_col_index = 4
+                            battery_voltage_col_index = 5
+                            first_sensor_value_col_index = 6
 
-                date_string = xl_date_to_date(row_values[date_col_index], book) + " " + convert_excel_time(row_values[time_col_index])
-                epoch = int(datetime.strptime(date_string, '%d/%m/%Y %I:%M:%S %p').timestamp())
-                control_station = int(row_values[control_station_col_index])
-                serial_number = int(row_values[serial_number_col_index])
-                signal_strength = int(str(row_values[signal_strength_col_index]).replace("@", "").split('.')[0])
-                battery_voltage = int(str(row_values[battery_voltage_col_index]).split('.')[0], 16)
-                first_sensor_value = int(row_values[first_sensor_value_col_index])
-                record_log = "row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d" % (valid_rows, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value)
-                print(record_log)
-                add_record_to_table_single(table_f, epoch, control_station, serial_number, signal_strength, battery_voltage, first_sensor_value)
-                valid_rows += 1
-            except Exception as exception:
-                print(exception)
-                log = "%s---%s---%s\n" % (str(exception), path, record_log)
-                log_file.write(log)
-        table_f.flush()
-        del book
+                    date_string = xl_date_to_date(row_values[date_col_index], book) + " " + convert_excel_time(
+                        row_values[time_col_index])
+                    epoch = int(datetime.strptime(date_string, '%d/%m/%Y %I:%M:%S %p').timestamp())
+                    control_station = int(row_values[control_station_col_index])
+                    serial_number = int(row_values[serial_number_col_index])
+                    signal_strength = int(str(row_values[signal_strength_col_index]).replace("@", "").split('.')[0])
+                    battery_voltage = int(str(row_values[battery_voltage_col_index]).split('.')[0], 16)
+                    first_sensor_value = int(row_values[first_sensor_value_col_index])
+                    record_log = "time=%s  row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d" % (
+                    get_elapsed_time_string(start_time, time.time()), valid_rows, epoch, control_station, serial_number,
+                    signal_strength, battery_voltage, first_sensor_value)
+                    # print(record_log)
+                    add_record_to_table_single(table_f, epoch, control_station, serial_number, signal_strength,
+                                               battery_voltage, first_sensor_value)
+                    valid_rows += 1
+                except Exception as exception:
+                    print(exception)
+                    print(path)
+                    print(row_values)
+                    log = "%d/%d--%s---%s---%s---%s" % (curr_file, len(file_paths), get_elapsed_time_string(start_time, time.time()), str(exception), path, record_log)
+                    print(log)
+                    # log_file.write(log+"\n")
+            table_f.flush()
+            del book
+        except FileNotFoundError as e:
+            print(e)
+            continue
 
 
 def generate_raw_file(farm_id):
