@@ -1,0 +1,64 @@
+HDF5 error back trace
+
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dio.c", line 336, in H5Dwrite
+    can't write data
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dio.c", line 828, in H5D__write
+    can't write data
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 2363, in H5D__chunk_write
+    unable to read raw data chunk
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3686, in H5D__chunk_lock
+    unable to preempt chunk(s) from cache
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3352, in H5D__chunk_cache_prune
+    unable to preempt one or more raw data cache entry
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3203, in H5D__chunk_cache_evict
+    cannot flush indexed storage buffer
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3123, in H5D__chunk_flush_entry
+    unable to write raw data to file
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5fio.c", line 165, in H5F_block_write
+    write through page buffer failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5pb.c", line 1028, in H5PB_write
+    write through metadata accumulator failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5faccum.c", line 826, in H5F__accum_write
+    file write failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5fdint.c", line 258, in H5FD_write
+    driver write request failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5fdcore.c", line 1254, in H5FD__core_write
+    unable to allocate memory block of 330366976 bytes
+
+End of HDF5 error back trace
+
+Problems appending the records.
+C:\Tracking Data\Bothaville\July 2013\70091100060_2013-7-19_06-00-00_to_2013-7-26_06-00-00.xlsx
+[41479.0, 0.9554398148148149, 70091100060.0, 40011301753.0, -82.0, 94.0, 0.0]
+92/612--00:00:47:01---HDF5 error back trace
+
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dio.c", line 336, in H5Dwrite
+    can't write data
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dio.c", line 828, in H5D__write
+    can't write data
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 2363, in H5D__chunk_write
+    unable to read raw data chunk
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3686, in H5D__chunk_lock
+    unable to preempt chunk(s) from cache
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3352, in H5D__chunk_cache_prune
+    unable to preempt one or more raw data cache entry
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3203, in H5D__chunk_cache_evict
+    cannot flush indexed storage buffer
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5dchunk.c", line 3123, in H5D__chunk_flush_entry
+    unable to write raw data to file
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5fio.c", line 165, in H5F_block_write
+    write through page buffer failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5pb.c", line 1028, in H5PB_write
+    write through metadata accumulator failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5faccum.c", line 826, in H5F__accum_write
+    file write failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5fdint.c", line 258, in H5FD_write
+    driver write request failed
+  File "d:\build\hdf5\hdf5-1.10.3\src\h5fdcore.c", line 1254, in H5FD__core_write
+    unable to allocate memory block of 330366976 bytes
+
+End of HDF5 error back trace
+
+Problems appending the records.---C:\Tracking Data\Bothaville\July 2013\70091100060_2013-7-19_06-00-00_to_2013-7-26_06-00-00.xlsx---time=00:00:47:01  row=11871015 epoch=1374702950 control_station=70091100060 serial_number=40011301753 signal_strength=-82 battery_voltage=148 first_sensor_value=0
+
+Process finished with exit code -1073741819 (0xC0000005)

@@ -3,8 +3,10 @@ import re
 import uuid
 from datetime import datetime
 
+import numpy as np
 import tables
 from cassandra.cluster import Cluster
+from ipython_genutils.py3compat import xrange
 from pymongo import MongoClient
 from tables import *
 import os.path
@@ -14,6 +16,7 @@ import time
 import os
 import glob
 import xlrd
+import pandas
 
 
 class Animal(IsDescription):
@@ -479,12 +482,18 @@ def generate_raw_files_from_xlsx(directory_path):
         h5file = tables.open_file("raw_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=tables.Filters(complib='blosc', complevel=9))
     else:
         purge_file("raw_data.h5")
-        h5file = tables.open_file("raw_data.h5", "w", driver="H5FD_CORE")
+        # h5file = tables.open_file("raw_data.h5", mode="w", driver="H5FD_CORE")
 
-    # group_f = h5file.create_group("/", "resolution_f", 'raw data')
-    table_f = h5file.create_table("/", "data", Animal, "Animal data in full resolution")
+        store = pandas.HDFStore("raw_data.h5")
+
+    # table_f = h5file.create_table("/", "data", Animal, "Animal data in full resolution", expectedrows=33724492)
+    # table_row = table_f.row
     valid_rows = 0
+
     for curr_file, path in enumerate(file_paths):
+        # table_f = h5file.create_table("/", "data%d" % curr_file, Animal, path, expectedrows=33724492)
+        # table_row = table_f.row
+        df = []
         try:
             record_log = ""
             print("loading file in memory for reading...")
@@ -493,9 +502,9 @@ def generate_raw_files_from_xlsx(directory_path):
             sheet = book.sheet_by_index(0)
             print("start reading...")
             found_col_index = False
-            for row_index in range(0, sheet.nrows):
+            for row_index in xrange(0, sheet.nrows):
                 try:
-                    row_values = [sheet.cell(row_index, col_index).value for col_index in range(0, sheet.ncols)]
+                    row_values = [sheet.cell(row_index, col_index).value for col_index in xrange(0, sheet.ncols)]
                     # print(path)
                     # print(row_values)
                     # find index of each column
@@ -529,9 +538,29 @@ def generate_raw_files_from_xlsx(directory_path):
                     record_log = "time=%s  row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d" % (
                     get_elapsed_time_string(start_time, time.time()), valid_rows, epoch, control_station, serial_number,
                     signal_strength, battery_voltage, first_sensor_value)
-                    # print(record_log)
-                    add_record_to_table_single(table_f, epoch, control_station, serial_number, signal_strength,
-                                               battery_voltage, first_sensor_value)
+                    print(record_log)
+                    # add_record_to_table_single(table_f, epoch, control_station, serial_number, signal_strength,
+                    #                            battery_voltage, first_sensor_value)
+
+                    # table_row['timestamp'] = epoch
+                    # table_row['control_station'] = control_station
+                    # table_row['serial_number'] = serial_number
+                    # table_row['signal_strength'] = signal_strength
+                    # table_row['battery_voltage'] = battery_voltage
+                    # table_row['first_sensor_value'] = first_sensor_value
+                    # # print(timestamp_s, serial_number_s, signal_strenght_s, battery_voltage_s, activity_level_s, table.size_in_memory)
+                    # table_row.append()
+
+                    df.append(
+                        pandas.DataFrame({
+                        'timestamp': epoch,
+                        'control_station': control_station,
+                        'serial_number': serial_number,
+                        'signal_strength': signal_strength,
+                        'battery_voltage': battery_voltage,
+                        'first_sensor_value': first_sensor_value
+                    }, index=[valid_rows]))
+
                     valid_rows += 1
                 except Exception as exception:
                     print(exception)
@@ -540,11 +569,18 @@ def generate_raw_files_from_xlsx(directory_path):
                     log = "%d/%d--%s---%s---%s---%s" % (curr_file, len(file_paths), get_elapsed_time_string(start_time, time.time()), str(exception), path, record_log)
                     print(log)
                     # log_file.write(log+"\n")
-            table_f.flush()
             del book
-        except FileNotFoundError as e:
+            del sheet
+            store.append('/', value=pandas.concat(df), format='t', append=True,
+                         data_columns=['timestamp', 'control_station', 'serial_number', 'signal_strength',
+                                       'battery_voltage', 'first_sensor_value'])
+            del df
+            # del table_row
+            # table_f.flush()
+        except (Exception, FileNotFoundError, xlrd.biffh.XLRDError) as e:
             print(e)
             continue
+    store.close()
 
 
 def generate_raw_file(farm_id):
@@ -591,7 +627,7 @@ def generate_raw_file(farm_id):
 
 
 if db_type == 0:
-    generate_raw_files_from_xlsx("C:\SouthAfrica\Tracking Data")
+    generate_raw_files_from_xlsx("C:\Tracking Data")
     # farms = by_size(db_names, 11)
     # farms = ["70101100019", "70101200027"]
     # for farm_id in farms:
@@ -632,7 +668,7 @@ if db_type == 1:
                 "CREATE TABLE if not exists " + "\"" + "test" + "\"" + " (id Int, PRIMARY KEY(id))")
 
             n = 30000
-            for x in range(0, n):
+            for x in xrange(0, n):
                 query = """INSERT INTO """ + "\"" + str(
                     farm_id) + "\"" + "." + "\"" + "test" + "\"" + """ (id) VALUES (%s)"""
 
