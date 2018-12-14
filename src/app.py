@@ -7,7 +7,6 @@ import numpy as np
 import tables
 from cassandra.cluster import Cluster
 from ipython_genutils.py3compat import xrange
-from pymongo import MongoClient
 from tables import *
 import os.path
 from collections import defaultdict
@@ -111,6 +110,7 @@ def add_record_to_table(table, data):
 
 def add_record_to_table_sum(table, timestamp_f, serial_number_f, signal_strenght_max, signal_strenght_min,
                             battery_voltage_min, activity_level_avg):
+    # print(timestamp_f, serial_number_f, signal_strenght_max, signal_strenght_min, battery_voltage_min, activity_level_avg)
     table_row = table.row
     table_row['timestamp'] = int(timestamp_f)
     table_row['serial_number'] = int(serial_number_f)
@@ -125,13 +125,12 @@ def add_record_to_table_sum(table, timestamp_f, serial_number_f, signal_strenght
     #     print("sum flush...")
 
 
-def add_record_to_table_single(table, timestamp_s, control_station, serial_number_s, signal_strenght_s, battery_voltage_s,
+def add_record_to_table_single(table, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s,
                                activity_level_s):
     table_row = table.row
     table_row['timestamp'] = timestamp_s
-    table_row['control_station'] = control_station
     table_row['serial_number'] = serial_number_s
-    table_row['signal_strength'] = signal_strenght_s
+    table_row['signal_strength'] = signal_strength_s
     table_row['battery_voltage'] = battery_voltage_s
     table_row['first_sensor_value'] = activity_level_s
     # print(timestamp_s, serial_number_s, signal_strenght_s, battery_voltage_s, activity_level_s, table.size_in_memory)
@@ -187,20 +186,66 @@ def get_elapsed_time_string(time_initial, time_next):
     return '%02d:%02d:%02d:%02d' % (rd.days, rd.hours, rd.minutes, rd.seconds)
 
 
-def process_raw_file(farm_id):
-    start_time = time.time()
-    h5file_raw = tables.open_file("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\" + farm_id + "_raw.h5", "r")
-    data = h5file_raw.root.resolution_f.data
-    list_raw = [
-        (x['timestamp'], x['serial_number'], x['signal_strength'], x['battery_voltage'], x['first_sensor_value']) for x
-        in data.iterrows()]
-    groups = defaultdict(list)
+def process_raw_h5file(path):
+    h5_raw = tables.open_file(path, "r")
+    data = h5_raw.root.table
+    # list_raw = [
+    #     (x['timestamp'], x['control_station'], x['serial_number'], x['signal_strength'], x['battery_voltage'], x['first_sensor_value']) for x
+    #     in data.iterrows()]
+    # data = data[0:1000]
+    list_raw = []
+    size = len(data)
+    for index, x in enumerate(data):
+        print("%d%%" % int((index/size)*100))
+        value = (x['timestamp'], x['control_station'], x['serial_number'], x['signal_strength'], x['battery_voltage'], x['first_sensor_value'])
+        list_raw.append(value)
 
-    for obj in list_raw:
+    groups = defaultdict(list)
+    size = len(list_raw)
+    for i, obj in enumerate(list_raw):
+        print("%d%%" % int((i / size) * 100))
         groups[obj[1]].append(obj)
 
-    grouped_list = list(groups.values())
-    animal_list_grouped_by_serialn = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
+    animal_list_grouped_by_farmid = list(groups.values())
+    # animal_list_grouped_by_farmid = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
+    for group in animal_list_grouped_by_farmid:
+        process_raw_file(str(group[0][1]), group)
+
+
+def process_raw_file(farm_id, data):
+
+    if farm_id == "70091100056":
+        farm_id = "Cedara_"+farm_id
+
+    if farm_id == "70091100060":
+        farm_id = "Bothaville_"+farm_id
+
+    if farm_id == "70091100005":
+        farm_id = "Elandsberg_"+farm_id
+
+    if farm_id == "70101100025":
+        farm_id = "Eenzaamheid_"+farm_id
+
+    if farm_id == "70101100029":
+        farm_id = "Msinga_"+farm_id
+
+    if farm_id == "70101100027":
+        farm_id = "Delmas_"+farm_id
+
+    # if farm_id == "70101100019":
+    #     farm_id = "name"
+
+    start_time = time.time()
+    # h5file_raw = tables.open_file("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\" + farm_id + "_raw.h5", "r")
+    # print(data)
+    print(farm_id)
+    groups = defaultdict(list)
+
+    for obj in data:
+        groups[obj[2]].append(obj)
+
+    animal_list_grouped_by_serialn = list(groups.values())
+    # animal_list_grouped_by_serialn = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
 
     # init new .h5 file for receiving sorted data
     FILTERS = tables.Filters(complib='blosc', complevel=9)
@@ -217,18 +262,23 @@ def process_raw_file(farm_id):
     group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
     group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
     group_h = h5file.create_group("/", "resolution_h", 'resolution per hour')
-    group_h_h = h5file.create_group("/", "resolution_h_h", 'resolution per 30 minutes')
+    group_h_h = h5file.create_group("/", "resolution_h_h", 'resolution per 10 minutes')
 
     table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
     table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
     table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
     table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
     table_h = h5file.create_table(group_h, "data", Animal2, "Animal data activity level averaged by hour")
-    table_h_h = h5file.create_table(group_h_h, "data", Animal2, "Animal data activity level averaged by 30 minutes")
-    cpt_animal_group, cpt_individual = 0, 0
-    for animal_group in animal_list_grouped_by_serialn:
+    table_h_h = h5file.create_table(group_h_h, "data", Animal2, "Animal data activity level averaged by 10 minutes")
+    cpt_animal_group = 0
+    size = len(animal_list_grouped_by_serialn)
+    for index, animal_group in enumerate(animal_list_grouped_by_serialn):
         cpt_animal_group += 1
-        animal_group_s = sorted([animal_group], key=lambda x: x[0])
+        print(farm_id + " " + str(int((index / size) * 100)) + "% " + str(cpt_animal_group) + "/" + str(size) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
+
+        animal_group_s = sorted(animal_group, key=lambda x: x[0])
+        # animal_group_s = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
+
         time_initial_h_h, time_initial_h, time_initial_d, time_initial_w, time_initial_m, time_next = 0, 0, 0, 0, 0, 0
         time_initial_s_h_h, time_initial_s_h, time_initial_s_d, time_initial_s_w, time_initial_s_m, time_next_s = False, False, False, False, False, False
 
@@ -238,204 +288,202 @@ def process_raw_file(farm_id):
         signal_strength_min_w, signal_strength_max_w, battery_voltage_min_w, activity_level_sum_w, cpt_w = None, None, None, 0, 0
         signal_strength_min_m, signal_strength_max_m, battery_voltage_min_m, activity_level_sum_m, cpt_m = None, None, None, 0, 0
 
-        for individual in animal_group_s:
-            cpt_individual += 1
-            cpt_record = 0
+        cpt_record = 0
+        for record in animal_group_s:
             # print(str(cpt_animal_group) + "/" + str(len(animal_list_grouped_by_serialn)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
-            for record in individual:
-                cpt_record += 1
-                print(str(cpt_animal_group) + "/" + str(len(animal_list_grouped_by_serialn)) + " " + str(
-                    cpt_record) + "/" + str(len(individual)) + " " + get_elapsed_time_string(start_time,
-                                                                                             time.time()) + " ...")
-                add_record_to_table_single(table_f, record[0], record[1], record[2], record[3], record[4])
-                if time_initial_s_h_h is False:
-                    time_initial_s_h_h = True
-                    time_initial_h_h = record[0]
-                if time_initial_s_h is False:
-                    time_initial_s_h = True
-                    time_initial_h = record[0]
-                if time_initial_s_d is False:
-                    time_initial_s_d = True
-                    time_initial_d = record[0]
-                if time_initial_s_w is False:
-                    time_initial_s_w = True
-                    time_initial_w = record[0]
-                if time_initial_s_m is False:
-                    time_initial_s_m = True
-                    time_initial_m = record[0]
+            # size = len(individual)
+            # for i, record in enumerate(individual):
+            cpt_record += 1
+            # print(str(int((i/size) * 100)) + "%% " + str(cpt_record) + "/" + str(len(individual)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
+            # print(record)
+            add_record_to_table_single(table_f, record[0], record[2], record[3], record[4], record[5])
+            if time_initial_s_h_h is False:
+                time_initial_s_h_h = True
+                time_initial_h_h = record[0]
+            if time_initial_s_h is False:
+                time_initial_s_h = True
+                time_initial_h = record[0]
+            if time_initial_s_d is False:
+                time_initial_s_d = True
+                time_initial_d = record[0]
+            if time_initial_s_w is False:
+                time_initial_s_w = True
+                time_initial_w = record[0]
+            if time_initial_s_m is False:
+                time_initial_s_m = True
+                time_initial_m = record[0]
 
-                time_next = record[0]
-                activity_level_sum_h_h += record[4]
-                cpt_h_h += 1
+            time_next = record[0]
+            activity_level_sum_h_h += record[5]
+            cpt_h_h += 1
 
-                if not battery_voltage_min_h_h:
-                    battery_voltage_min_h_h = record[3]
+            if not battery_voltage_min_h_h:
+                battery_voltage_min_h_h = record[4]
 
-                if battery_voltage_min_h_h > record[3]:
-                    battery_voltage_min_h_h = record[3]
+            if battery_voltage_min_h_h > record[4]:
+                battery_voltage_min_h_h = record[4]
 
-                if not signal_strength_min_h_h:
-                    signal_strength_min_h_h = record[2]
+            if not signal_strength_min_h_h:
+                signal_strength_min_h_h = record[3]
 
-                if signal_strength_min_h_h > record[2]:
-                    signal_strength_min_h_h = record[2]
+            if signal_strength_min_h_h > record[3]:
+                signal_strength_min_h_h = record[3]
 
-                if not signal_strength_max_h_h:
-                    signal_strength_max_h_h = record[2]
+            if not signal_strength_max_h_h:
+                signal_strength_max_h_h = record[3]
 
-                if signal_strength_max_h_h < record[2]:
-                    signal_strength_max_h_h = record[2]
+            if signal_strength_max_h_h < record[3]:
+                signal_strength_max_h_h = record[3]
 
-                activity_level_sum_h += record[4]
-                cpt_h += 1
+            activity_level_sum_h += record[5]
+            cpt_h += 1
 
-                if not battery_voltage_min_h:
-                    battery_voltage_min_h = record[3]
+            if not battery_voltage_min_h:
+                battery_voltage_min_h = record[4]
 
-                if battery_voltage_min_h > record[3]:
-                    battery_voltage_min_h = record[3]
+            if battery_voltage_min_h > record[4]:
+                battery_voltage_min_h = record[4]
 
-                if not signal_strength_min_h:
-                    signal_strength_min_h = record[2]
+            if not signal_strength_min_h:
+                signal_strength_min_h = record[3]
 
-                if signal_strength_min_h > record[2]:
-                    signal_strength_min_h = record[2]
+            if signal_strength_min_h > record[3]:
+                signal_strength_min_h = record[3]
 
-                if not signal_strength_max_h:
-                    signal_strength_max_h = record[2]
+            if not signal_strength_max_h:
+                signal_strength_max_h = record[3]
 
-                if signal_strength_max_h < record[2]:
-                    signal_strength_max_h = record[2]
+            if signal_strength_max_h < record[3]:
+                signal_strength_max_h = record[3]
 
-                activity_level_sum_d += record[4]
-                cpt_d += 1
+            activity_level_sum_d += record[5]
+            cpt_d += 1
 
-                if not battery_voltage_min_d:
-                    battery_voltage_min_d = record[3]
+            if not battery_voltage_min_d:
+                battery_voltage_min_d = record[4]
 
-                if battery_voltage_min_d > record[3]:
-                    battery_voltage_min_d = record[3]
+            if battery_voltage_min_d > record[4]:
+                battery_voltage_min_d = record[4]
 
-                if not signal_strength_min_d:
-                    signal_strength_min_d = record[2]
+            if not signal_strength_min_d:
+                signal_strength_min_d = record[3]
 
-                if signal_strength_min_d > record[2]:
-                    signal_strength_min_d = record[2]
+            if signal_strength_min_d > record[3]:
+                signal_strength_min_d = record[3]
 
-                if not signal_strength_max_d:
-                    signal_strength_max_d = record[2]
+            if not signal_strength_max_d:
+                signal_strength_max_d = record[3]
 
-                if signal_strength_max_d < record[2]:
-                    signal_strength_max_d = record[2]
+            if signal_strength_max_d < record[3]:
+                signal_strength_max_d = record[3]
 
-                activity_level_sum_w += record[4]
-                cpt_w += 1
+            activity_level_sum_w += record[5]
+            cpt_w += 1
 
-                if not battery_voltage_min_w:
-                    battery_voltage_min_w = record[3]
+            if not battery_voltage_min_w:
+                battery_voltage_min_w = record[4]
 
-                if battery_voltage_min_w > record[3]:
-                    battery_voltage_min_w = record[3]
+            if battery_voltage_min_w > record[4]:
+                battery_voltage_min_w = record[4]
 
-                if not signal_strength_min_w:
-                    signal_strength_min_w = record[2]
+            if not signal_strength_min_w:
+                signal_strength_min_w = record[3]
 
-                if signal_strength_min_w > record[2]:
-                    signal_strength_min_w = record[2]
+            if signal_strength_min_w > record[3]:
+                signal_strength_min_w = record[3]
 
-                if not signal_strength_max_w:
-                    signal_strength_max_w = record[2]
+            if not signal_strength_max_w:
+                signal_strength_max_w = record[3]
 
-                if signal_strength_max_w < record[2]:
-                    signal_strength_max_w = record[2]
+            if signal_strength_max_w < record[3]:
+                signal_strength_max_w = record[3]
 
-                activity_level_sum_m += record[4]
-                cpt_m += 1
+            activity_level_sum_m += record[5]
+            cpt_m += 1
 
-                if not battery_voltage_min_m:
-                    battery_voltage_min_m = record[3]
+            if not battery_voltage_min_m:
+                battery_voltage_min_m = record[4]
 
-                if battery_voltage_min_m > record[3]:
-                    battery_voltage_min_m = record[3]
+            if battery_voltage_min_m > record[4]:
+                battery_voltage_min_m = record[4]
 
-                if not signal_strength_min_m:
-                    signal_strength_min_m = record[2]
+            if not signal_strength_min_m:
+                signal_strength_min_m = record[3]
 
-                if signal_strength_min_m > record[2]:
-                    signal_strength_min_m = record[2]
+            if signal_strength_min_m > record[3]:
+                signal_strength_min_m = record[3]
 
-                if not signal_strength_max_m:
-                    signal_strength_max_m = record[2]
+            if not signal_strength_max_m:
+                signal_strength_max_m = record[3]
 
-                if signal_strength_max_m < record[2]:
-                    signal_strength_max_m = record[2]
+            if signal_strength_max_m < record[3]:
+                signal_strength_max_m = record[3]
 
-                elapsed_days_h_h = get_elapsed_minutes(time_initial_h_h, time_next)
-                if elapsed_days_h_h >= 30:
-                    time_initial_s_h_h = False
-                    add_record_to_table_sum(table_h_h, time_initial_h_h, record[1], signal_strength_max_h_h,
-                                            signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
-                    activity_level_sum_h_h = 0
-                    cpt_h_h = 0
-                    battery_voltage_min_h_h = None
-                    signal_strength_min_h_h = None
-                    signal_strength_max_h_h = None
+            elapsed_days_h_h = get_elapsed_minutes(time_initial_h_h, time_next)
+            if elapsed_days_h_h >= 10:
+                time_initial_s_h_h = False
+                add_record_to_table_sum(table_h_h, time_initial_h_h, record[2], signal_strength_max_h_h,
+                                        signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
+                activity_level_sum_h_h = 0
+                cpt_h_h = 0
+                battery_voltage_min_h_h = None
+                signal_strength_min_h_h = None
+                signal_strength_max_h_h = None
 
-                if not is_same_hour(time_initial_h, time_next):
-                    time_initial_s_h = False
-                    add_record_to_table_sum(table_h, time_initial_h, record[1], signal_strength_max_h,
-                                            signal_strength_min_h, battery_voltage_min_h, activity_level_sum_h)
-                    activity_level_sum_h = 0
-                    cpt_h = 0
-                    battery_voltage_min_h = None
-                    signal_strength_min_h = None
-                    signal_strength_max_h = None
+            if not is_same_hour(time_initial_h, time_next):
+                time_initial_s_h = False
+                add_record_to_table_sum(table_h, time_initial_h, record[2], signal_strength_max_h,
+                                        signal_strength_min_h, battery_voltage_min_h, activity_level_sum_h)
+                activity_level_sum_h = 0
+                cpt_h = 0
+                battery_voltage_min_h = None
+                signal_strength_min_h = None
+                signal_strength_max_h = None
 
-                if not is_same_day(time_initial_d, time_next):
-                    time_initial_s_d = False
-                    add_record_to_table_sum(table_d, time_initial_d, record[1], signal_strength_max_d,
-                                            signal_strength_min_d, battery_voltage_min_d, activity_level_sum_d)
-                    activity_level_sum_d = 0
-                    cpt_d = 0
-                    battery_voltage_min_d = None
-                    signal_strength_min_d = None
-                    signal_strength_max_d = None
+            if not is_same_day(time_initial_d, time_next):
+                time_initial_s_d = False
+                add_record_to_table_sum(table_d, time_initial_d, record[2], signal_strength_max_d,
+                                        signal_strength_min_d, battery_voltage_min_d, activity_level_sum_d)
+                activity_level_sum_d = 0
+                cpt_d = 0
+                battery_voltage_min_d = None
+                signal_strength_min_d = None
+                signal_strength_max_d = None
 
-                elapsed_days_w = get_elapsed_days(time_initial_w, time_next)
-                if elapsed_days_w > 7:
-                    time_initial_s_w = False
-                    activity_level_sum_w = 0
-                    cpt_w = 0
-                    battery_voltage_min_w = None
-                    signal_strength_min_w = None
-                    signal_strength_max_w = None
-                if elapsed_days_w == 7:
-                    time_initial_s_w = False
-                    add_record_to_table_sum(table_w, time_initial_w, record[1], signal_strength_max_w,
-                                            signal_strength_min_w, battery_voltage_min_w, activity_level_sum_w)
-                    activity_level_sum_w = 0
-                    cpt_w = 0
-                    battery_voltage_min_w = None
-                    signal_strength_min_w = None
-                    signal_strength_max_w = None
+            elapsed_days_w = get_elapsed_days(time_initial_w, time_next)
+            if elapsed_days_w > 7:
+                time_initial_s_w = False
+                activity_level_sum_w = 0
+                cpt_w = 0
+                battery_voltage_min_w = None
+                signal_strength_min_w = None
+                signal_strength_max_w = None
+            if elapsed_days_w == 7:
+                time_initial_s_w = False
+                add_record_to_table_sum(table_w, time_initial_w, record[2], signal_strength_max_w,
+                                        signal_strength_min_w, battery_voltage_min_w, activity_level_sum_w)
+                activity_level_sum_w = 0
+                cpt_w = 0
+                battery_voltage_min_w = None
+                signal_strength_min_w = None
+                signal_strength_max_w = None
 
-                if not is_same_month(time_initial_m, time_next):
-                    time_initial_s_m = False
-                    add_record_to_table_sum(table_m, time_initial_m, record[1], signal_strength_max_m,
-                                            signal_strength_min_m, battery_voltage_min_m, activity_level_sum_m)
-                    activity_level_sum_m = 0
-                    cpt_m = 0
-                    battery_voltage_min_m = None
-                    signal_strength_min_m = None
-                    signal_strength_max_m = None
-
-    print("finished processing raw file.")
+            if not is_same_month(time_initial_m, time_next):
+                time_initial_s_m = False
+                add_record_to_table_sum(table_m, time_initial_m, record[2], signal_strength_max_m,
+                                        signal_strength_min_m, battery_voltage_min_m, activity_level_sum_m)
+                activity_level_sum_m = 0
+                cpt_m = 0
+                battery_voltage_min_m = None
+                signal_strength_min_m = None
+                signal_strength_max_m = None
     table_f.flush()
     table_h.flush()
     table_m.flush()
     table_w.flush()
     table_d.flush()
     table_h_h.flush()
+    print("finished processing raw file.")
 
 
 def xl_date_to_date(xldate, wb):
@@ -536,8 +584,8 @@ def generate_raw_files_from_xlsx(directory_path):
                     battery_voltage = int(str(row_values[battery_voltage_col_index]).split('.')[0], 16)
                     first_sensor_value = int(row_values[first_sensor_value_col_index])
                     record_log = "time=%s  row=%d epoch=%d control_station=%d serial_number=%d signal_strength=%d battery_voltage=%d first_sensor_value=%d" % (
-                    get_elapsed_time_string(start_time, time.time()), valid_rows, epoch, control_station, serial_number,
-                    signal_strength, battery_voltage, first_sensor_value)
+                        get_elapsed_time_string(start_time, time.time()), valid_rows, epoch, control_station, serial_number,
+                        signal_strength, battery_voltage, first_sensor_value)
                     print(record_log)
                     # add_record_to_table_single(table_f, epoch, control_station, serial_number, signal_strength,
                     #                            battery_voltage, first_sensor_value)
@@ -553,13 +601,13 @@ def generate_raw_files_from_xlsx(directory_path):
 
                     df.append(
                         pandas.DataFrame({
-                        'timestamp': epoch,
-                        'control_station': control_station,
-                        'serial_number': serial_number,
-                        'signal_strength': signal_strength,
-                        'battery_voltage': battery_voltage,
-                        'first_sensor_value': first_sensor_value
-                    }, index=[valid_rows]))
+                            'timestamp': epoch,
+                            'control_station': control_station,
+                            'serial_number': serial_number,
+                            'signal_strength': signal_strength,
+                            'battery_voltage': battery_voltage,
+                            'first_sensor_value': first_sensor_value
+                        }, index=[valid_rows]))
 
                     valid_rows += 1
                 except Exception as exception:
@@ -568,7 +616,7 @@ def generate_raw_files_from_xlsx(directory_path):
                     print(row_values)
                     log = "%d/%d--%s---%s---%s---%s" % (curr_file, len(file_paths), get_elapsed_time_string(start_time, time.time()), str(exception), path, record_log)
                     print(log)
-                    # log_file.write(log+"\n")
+                    log_file.write(log+"\n")
             del book
             del sheet
             store.append('/', value=pandas.concat(df), format='t', append=True,
@@ -627,7 +675,8 @@ def generate_raw_file(farm_id):
 
 
 if db_type == 0:
-    generate_raw_files_from_xlsx("C:\Tracking Data")
+    # generate_raw_files_from_xlsx("C:\Tracking Data")
+    process_raw_h5file("C:\SouthAfrica\Tracking Data\\raw_data.h5")
     # farms = by_size(db_names, 11)
     # farms = ["70101100019", "70101200027"]
     # for farm_id in farms:
