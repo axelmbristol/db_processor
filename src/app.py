@@ -16,6 +16,8 @@ import os
 import glob
 import xlrd
 import pandas
+import sys
+import pymysql
 
 
 class Animal(IsDescription):
@@ -46,6 +48,37 @@ class Animal2(IsDescription):
 # client = MongoClient('localhost', 27017)
 # db_names = client.list_database_names()
 db_type = 0
+
+
+def create_sql_db():
+    # Create a connection object
+    db_server_name = "localhost"
+    db_user = "axel"
+    db_password = "Mojjo@2015"
+    db_name = "test"
+    char_set = "utf8mb4"
+    cusror_type = pymysql.cursors.DictCursor
+
+    connection_object = pymysql.connect(host=db_server_name, user=db_user, password=db_password)
+
+    connection_object.cursor().execute('CREATE DATABASE IF NOT EXISTS %s' % db_name)
+
+    connection_object = pymysql.connect(host=db_server_name, user=db_user, password=db_password,
+                                        db=db_name, charset=char_set, cursorclass=cusror_type)
+
+    try:
+        cursor_object = connection_object.cursor()
+        sql_query = "CREATE TABLE Employee(id int, LastName varchar(32), FirstName varchar(32), DepartmentCode int)"
+        cursor_object.execute(sql_query)
+        sql_query = "show tables"
+        cursor_object.execute(sql_query)
+        rows = cursor_object.fetchall()
+        for row in rows:
+            print(row)
+    except Exception as e:
+        print("Exeception occured:{}".format(e))
+    finally:
+        connection_object.close()
 
 
 def by_size(words, size):
@@ -187,6 +220,7 @@ def get_elapsed_time_string(time_initial, time_next):
 
 
 def process_raw_h5file(path):
+    print(path)
     h5_raw = tables.open_file(path, "r")
     data = h5_raw.root.table
     # list_raw = [
@@ -195,15 +229,16 @@ def process_raw_h5file(path):
     # data = data[0:1000]
     list_raw = []
     size = len(data)
+    print("loading data...")
     for index, x in enumerate(data):
-        print("%d%%" % int((index/size)*100))
+        # print("%d%%" % int((index/size)*100))
         value = (x['timestamp'], x['control_station'], x['serial_number'], x['signal_strength'], x['battery_voltage'], x['first_sensor_value'])
         list_raw.append(value)
 
     groups = defaultdict(list)
     size = len(list_raw)
     for i, obj in enumerate(list_raw):
-        print("%d%%" % int((i / size) * 100))
+        # print("%d%%" % int((i / size) * 100))
         groups[obj[1]].append(obj)
 
     animal_list_grouped_by_farmid = list(groups.values())
@@ -220,7 +255,7 @@ def process_raw_file(farm_id, data):
     if farm_id == "70091100060":
         farm_id = "Bothaville_"+farm_id
 
-    if farm_id == "70091100005":
+    if farm_id == "70101100005":
         farm_id = "Elandsberg_"+farm_id
 
     if farm_id == "70101100025":
@@ -229,7 +264,7 @@ def process_raw_file(farm_id, data):
     if farm_id == "70101100029":
         farm_id = "Msinga_"+farm_id
 
-    if farm_id == "70101100027":
+    if farm_id == "70101200027":
         farm_id = "Delmas_"+farm_id
 
     # if farm_id == "70101100019":
@@ -247,29 +282,41 @@ def process_raw_file(farm_id, data):
     animal_list_grouped_by_serialn = list(groups.values())
     # animal_list_grouped_by_serialn = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
 
-    # init new .h5 file for receiving sorted data
-    FILTERS = tables.Filters(complib='blosc', complevel=9)
-    compression = False
-    if compression:
-        purge_file(farm_id + "_data_compressed_blosc.h5")
-        h5file = tables.open_file(farm_id + "_data_compressed_blosc.h5", "w", driver="H5FD_CORE", filters=FILTERS)
-    else:
-        purge_file(farm_id + ".h5")
-        h5file = tables.open_file(farm_id + ".h5", "w", driver="H5FD_CORE")
+    #select database type to use
+    print(sys.argv)
+    if sys.argv[1] == 'sql':
+        print("store data in sql database...")
 
-    group_f = h5file.create_group("/", "resolution_f", 'raw data')
-    group_m = h5file.create_group("/", "resolution_m", 'resolution per month')
-    group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
-    group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
-    group_h = h5file.create_group("/", "resolution_h", 'resolution per hour')
-    group_h_h = h5file.create_group("/", "resolution_h_h", 'resolution per 10 minutes')
+    exit(0)
 
-    table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
-    table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
-    table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
-    table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
-    table_h = h5file.create_table(group_h, "data", Animal2, "Animal data activity level averaged by hour")
-    table_h_h = h5file.create_table(group_h_h, "data", Animal2, "Animal data activity level averaged by 10 minutes")
+    if sys.argv[1] == 'h5':
+        print("store data in h5 database...")
+        # init new .h5 file for receiving sorted data
+        FILTERS = tables.Filters(complib='blosc', complevel=9)
+        compression = False
+        if compression:
+            # purge_file(farm_id + "_data_compressed_blosc.h5")
+            h5file = tables.open_file(farm_id + "_data_compressed_blosc.h5", "w", driver="H5FD_CORE", filters=FILTERS)
+        else:
+            # purge_file(farm_id + ".h5")
+            h5file = tables.open_file(farm_id + ".h5", "w", driver="H5FD_CORE")
+
+        group_f = h5file.create_group("/", "resolution_f", 'raw data')
+        group_m = h5file.create_group("/", "resolution_m", 'resolution per month')
+        group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
+        group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
+        group_h = h5file.create_group("/", "resolution_h", 'resolution per hour')
+        group_h_h = h5file.create_group("/", "resolution_h_h", 'resolution per 10 minutes')
+
+        table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
+        table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
+        table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
+        table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
+        table_h = h5file.create_table(group_h, "data", Animal2, "Animal data activity level averaged by hour")
+        table_h_h = h5file.create_table(group_h_h, "data", Animal2, "Animal data activity level averaged by 10 minutes")
+
+
+
     cpt_animal_group = 0
     size = len(animal_list_grouped_by_serialn)
     for index, animal_group in enumerate(animal_list_grouped_by_serialn):
@@ -296,7 +343,8 @@ def process_raw_file(farm_id, data):
             cpt_record += 1
             # print(str(int((i/size) * 100)) + "%% " + str(cpt_record) + "/" + str(len(individual)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
             # print(record)
-            add_record_to_table_single(table_f, record[0], record[2], record[3], record[4], record[5])
+            if sys.argv[1] == 'h5':
+                add_record_to_table_single(table_f, record[0], record[2], record[3], record[4], record[5])
             if time_initial_s_h_h is False:
                 time_initial_s_h_h = True
                 time_initial_h_h = record[0]
@@ -422,7 +470,8 @@ def process_raw_file(farm_id, data):
             elapsed_days_h_h = get_elapsed_minutes(time_initial_h_h, time_next)
             if elapsed_days_h_h >= 10:
                 time_initial_s_h_h = False
-                add_record_to_table_sum(table_h_h, time_initial_h_h, record[2], signal_strength_max_h_h,
+                if sys.argv[1] == 'h5':
+                    add_record_to_table_sum(table_h_h, time_initial_h_h, record[2], signal_strength_max_h_h,
                                         signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
                 activity_level_sum_h_h = 0
                 cpt_h_h = 0
@@ -432,7 +481,8 @@ def process_raw_file(farm_id, data):
 
             if not is_same_hour(time_initial_h, time_next):
                 time_initial_s_h = False
-                add_record_to_table_sum(table_h, time_initial_h, record[2], signal_strength_max_h,
+                if sys.argv[1] == 'h5':
+                    add_record_to_table_sum(table_h, time_initial_h, record[2], signal_strength_max_h,
                                         signal_strength_min_h, battery_voltage_min_h, activity_level_sum_h)
                 activity_level_sum_h = 0
                 cpt_h = 0
@@ -442,7 +492,8 @@ def process_raw_file(farm_id, data):
 
             if not is_same_day(time_initial_d, time_next):
                 time_initial_s_d = False
-                add_record_to_table_sum(table_d, time_initial_d, record[2], signal_strength_max_d,
+                if sys.argv[1] == 'h5':
+                    add_record_to_table_sum(table_d, time_initial_d, record[2], signal_strength_max_d,
                                         signal_strength_min_d, battery_voltage_min_d, activity_level_sum_d)
                 activity_level_sum_d = 0
                 cpt_d = 0
@@ -460,7 +511,8 @@ def process_raw_file(farm_id, data):
                 signal_strength_max_w = None
             if elapsed_days_w == 7:
                 time_initial_s_w = False
-                add_record_to_table_sum(table_w, time_initial_w, record[2], signal_strength_max_w,
+                if sys.argv[1] == 'h5':
+                    add_record_to_table_sum(table_w, time_initial_w, record[2], signal_strength_max_w,
                                         signal_strength_min_w, battery_voltage_min_w, activity_level_sum_w)
                 activity_level_sum_w = 0
                 cpt_w = 0
@@ -470,7 +522,8 @@ def process_raw_file(farm_id, data):
 
             if not is_same_month(time_initial_m, time_next):
                 time_initial_s_m = False
-                add_record_to_table_sum(table_m, time_initial_m, record[2], signal_strength_max_m,
+                if sys.argv[1] == 'h5':
+                    add_record_to_table_sum(table_m, time_initial_m, record[2], signal_strength_max_m,
                                         signal_strength_min_m, battery_voltage_min_m, activity_level_sum_m)
                 activity_level_sum_m = 0
                 cpt_m = 0
@@ -675,8 +728,9 @@ def generate_raw_file(farm_id):
 
 
 if db_type == 0:
+    create_sql_db()
     # generate_raw_files_from_xlsx("C:\Tracking Data")
-    process_raw_h5file("C:\SouthAfrica\Tracking Data\\raw_data.h5")
+    # process_raw_h5file("C:\SouthAfrica\Tracking Data\\raw_data.h5")
     # farms = by_size(db_names, 11)
     # farms = ["70101100019", "70101200027"]
     # for farm_id in farms:
@@ -790,3 +844,5 @@ if db_type == 1:
         #     #     break
         #     print(str(collection_count) + "/" + str(len(colNames)) + " " + collection_names_in_day + "...")
     print("finished added %s rows to cassandra" % str(rows))
+
+
