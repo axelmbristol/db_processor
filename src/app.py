@@ -19,6 +19,7 @@ import pandas
 import sys
 import pymysql
 
+db = None
 
 class Animal(IsDescription):
     timestamp = Int32Col()
@@ -50,35 +51,117 @@ class Animal2(IsDescription):
 db_type = 0
 
 
-def create_sql_db():
+def add_record_to_sql_table():
+    print(5)
+
+
+def execute_sql_query(query):
+    try:
+        print("SQL Query: %s" % query)
+        global db
+        cursor = db.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        for row in rows:
+            print(row)
+        return rows
+    except Exception as e:
+        print("Exeception occured:{}".format(e))
+
+
+def execute_sql_query_with_values(query, values):
+    try:
+        print("SQL Query: %s \nSQL Query: with values %s" % query, ','.join(values))
+        global db
+        cursor = db.cursor()
+        cursor.execute(query, values)
+        rows = cursor.fetchall()
+        for row in rows:
+            print(row)
+        return rows
+    except Exception as e:
+        print("Exeception occured:{}".format(e))
+
+
+def insert_record_to_sql_table(table_id, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s,
+                               first_sensor_value):
+    values = (timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s, first_sensor_value)
+    execute_sql_query_with_values("INSERT INTO `%s` ("
+                      "timestamp, "
+                      "serial_number,"
+                      "signal_strength,"
+                      "battery_voltage,"
+                      "first_sensor_value,"
+                      ") VALUES (%s, %s, %s, %s, %s )" % table_id
+                                  , values)
+
+
+def insert_record_to_sql_table_(table_id, timestamp, serial_number, signal_strength_max, signal_strength_min, battery_voltage,
+                                activity_level_avg):
+    values = (timestamp, serial_number, signal_strength_max, signal_strength_min, battery_voltage, activity_level_avg)
+    execute_sql_query_with_values("INSERT INTO `%s` ("
+                      "timestamp, "
+                      "serial_number,"
+                      "signal_strength_max,"
+                      "signal_strength_min,"
+                      "battery_voltage,"
+                      "first_sensor_value,"
+                      ") VALUES (%s, %s, %s, %s, %s )" % table_id
+                                  , values)
+
+
+def drop_all_tables(db_name):
+    print("drop all tables in db...")
+    tables = execute_sql_query("SHOW TABLES")
+    for table in tables:
+        name = table["Tables_in_%s" % db_name]
+        execute_sql_query("DROP TABLE `%s`" % name)
+
+
+def create_sql_table(name):
+    print("creating sql table %s" % name)
+    execute_sql_query("CREATE TABLE `%s` ("
+                      "id INT PRIMARY KEY,"
+                      "timestamp INT,"
+                      "serial_number INT,"
+                      "signal_strength INT,"
+                      "battery_voltage INT,"
+                      "first_sensor_value BIGINT"
+                      ")" % name)
+
+
+def create_sql_table_(name):
+    print("creating sql table %s" % name)
+    execute_sql_query("CREATE TABLE `%s` ("
+                      "id INT PRIMARY KEY,"
+                      "timestamp INT,"
+                      "serial_number INT,"
+                      "signal_strength_min INT,"
+                      "signal_strength_max INT,"
+                      "battery_voltage INT,"
+                      "first_sensor_value BIGINT"
+                      ")" % name)
+
+
+def create_and_connect_to_sql_db(db_name):
+    print("CREATE DATABASE %s..." % db_name)
     # Create a connection object
     db_server_name = "localhost"
     db_user = "axel"
     db_password = "Mojjo@2015"
-    db_name = "test"
     char_set = "utf8mb4"
     cusror_type = pymysql.cursors.DictCursor
+    global db
+    db = pymysql.connect(host=db_server_name, user=db_user, password=db_password)
+    execute_sql_query('CREATE DATABASE IF NOT EXISTS %s' % db_name)
+    connect_to_sql_database(db_server_name, db_user, db_password, db_name, char_set, cusror_type)
 
-    connection_object = pymysql.connect(host=db_server_name, user=db_user, password=db_password)
 
-    connection_object.cursor().execute('CREATE DATABASE IF NOT EXISTS %s' % db_name)
-
-    connection_object = pymysql.connect(host=db_server_name, user=db_user, password=db_password,
-                                        db=db_name, charset=char_set, cursorclass=cusror_type)
-
-    try:
-        cursor_object = connection_object.cursor()
-        sql_query = "CREATE TABLE Employee(id int, LastName varchar(32), FirstName varchar(32), DepartmentCode int)"
-        cursor_object.execute(sql_query)
-        sql_query = "show tables"
-        cursor_object.execute(sql_query)
-        rows = cursor_object.fetchall()
-        for row in rows:
-            print(row)
-    except Exception as e:
-        print("Exeception occured:{}".format(e))
-    finally:
-        connection_object.close()
+def connect_to_sql_database(db_server_name, db_user, db_password, db_name, char_set, cusror_type):
+    print("connecting to db %s..." % db_name)
+    global db
+    db = pymysql.connect(host=db_server_name, user=db_user, password=db_password,
+                         db=db_name, charset=char_set, cursorclass=cusror_type)
 
 
 def by_size(words, size):
@@ -728,7 +811,11 @@ def generate_raw_file(farm_id):
 
 
 if db_type == 0:
-    create_sql_db()
+    db_name = "south_africa"
+    create_and_connect_to_sql_db(db_name)
+    drop_all_tables(db_name)
+    create_sql_table("test")
+    execute_sql_query("SHOW TABLES")
     # generate_raw_files_from_xlsx("C:\Tracking Data")
     # process_raw_h5file("C:\SouthAfrica\Tracking Data\\raw_data.h5")
     # farms = by_size(db_names, 11)
