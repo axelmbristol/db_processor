@@ -19,7 +19,7 @@ import pandas
 import sys
 import pymysql
 
-db = None
+sql_db = None
 
 class Animal(IsDescription):
     timestamp = Int32Col()
@@ -55,59 +55,57 @@ def add_record_to_sql_table():
     print(5)
 
 
-def execute_sql_query(query):
+def execute_sql_query(query, records=None, log_enabled=False):
     try:
-        print("SQL Query: %s" % query)
-        global db
-        cursor = db.cursor()
-        cursor.execute(query)
+        global sql_db
+        cursor = sql_db.cursor()
+        if records is not None:
+            print("SQL Query: %s" % query, records[0])
+            cursor.executemany(query, records)
+        else:
+            if log_enabled:
+                print("SQL Query: %s" % query)
+            cursor.execute(query)
         rows = cursor.fetchall()
         for row in rows:
-            print(row)
+            if log_enabled:
+                print("SQL Answer: %s" % row)
         return rows
     except Exception as e:
         print("Exeception occured:{}".format(e))
 
 
-def execute_sql_query_with_values(query, values):
-    try:
-        print("SQL Query: %s \nSQL Query: with values %s" % query, ','.join(values))
-        global db
-        cursor = db.cursor()
-        cursor.execute(query, values)
-        rows = cursor.fetchall()
-        for row in rows:
-            print(row)
-        return rows
-    except Exception as e:
-        print("Exeception occured:{}".format(e))
+def sql_db_flush():
+    global sql_db
+    sql_db.commit()
 
 
-def insert_record_to_sql_table(table_id, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s,
+def show_all_records_in_sql_table(table_name):
+    execute_sql_query("SELECT * FROM `%s`" % table_name)
+
+
+def insert_m_record_to_sql_table(table_id, records):
+    query = "INSERT INTO `"+table_id+"` (timestamp, serial_number, signal_strength, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s)"
+    execute_sql_query(query, records)
+
+
+def insert_m_record_to_sql_table_(table_id, records):
+    query = "INSERT INTO `" + table_id + "` (timestamp, serial_number, signal_strength_max, signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s)"
+    execute_sql_query(query, records)
+
+
+def insert_record_to_sql_table(table_id, timestamp, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s,
                                first_sensor_value):
-    values = (timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s, first_sensor_value)
-    execute_sql_query_with_values("INSERT INTO `%s` ("
-                      "timestamp, "
-                      "serial_number,"
-                      "signal_strength,"
-                      "battery_voltage,"
-                      "first_sensor_value,"
-                      ") VALUES (%s, %s, %s, %s, %s )" % table_id
-                                  , values)
+    values = (timestamp, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s, first_sensor_value)
+    query = "INSERT INTO `"+table_id+"` (timestamp, timestamp_s, serial_number, signal_strength, battery_voltage, first_sensor_value) VALUES (%d, %s, %d, %d, %d, %d)" % values
+    execute_sql_query(query)
 
 
-def insert_record_to_sql_table_(table_id, timestamp, serial_number, signal_strength_max, signal_strength_min, battery_voltage,
+def insert_record_to_sql_table_(table_id, timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage,
                                 activity_level_avg):
     values = (timestamp, serial_number, signal_strength_max, signal_strength_min, battery_voltage, activity_level_avg)
-    execute_sql_query_with_values("INSERT INTO `%s` ("
-                      "timestamp, "
-                      "serial_number,"
-                      "signal_strength_max,"
-                      "signal_strength_min,"
-                      "battery_voltage,"
-                      "first_sensor_value,"
-                      ") VALUES (%s, %s, %s, %s, %s )" % table_id
-                                  , values)
+    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)" % values
+    execute_sql_query(query)
 
 
 def drop_all_tables(db_name):
@@ -121,9 +119,10 @@ def drop_all_tables(db_name):
 def create_sql_table(name):
     print("creating sql table %s" % name)
     execute_sql_query("CREATE TABLE `%s` ("
-                      "id INT PRIMARY KEY,"
+                      "id INT AUTO_INCREMENT PRIMARY KEY,"
                       "timestamp INT,"
-                      "serial_number INT,"
+                      "timestamp_s VARCHAR(255),"
+                      "serial_number BIGINT,"
                       "signal_strength INT,"
                       "battery_voltage INT,"
                       "first_sensor_value BIGINT"
@@ -133,9 +132,10 @@ def create_sql_table(name):
 def create_sql_table_(name):
     print("creating sql table %s" % name)
     execute_sql_query("CREATE TABLE `%s` ("
-                      "id INT PRIMARY KEY,"
+                      "id INT AUTO_INCREMENT PRIMARY KEY,"
                       "timestamp INT,"
-                      "serial_number INT,"
+                      "timestamp_s VARCHAR(255),"
+                      "serial_number BIGINT,"
                       "signal_strength_min INT,"
                       "signal_strength_max INT,"
                       "battery_voltage INT,"
@@ -151,17 +151,17 @@ def create_and_connect_to_sql_db(db_name):
     db_password = "Mojjo@2015"
     char_set = "utf8mb4"
     cusror_type = pymysql.cursors.DictCursor
-    global db
-    db = pymysql.connect(host=db_server_name, user=db_user, password=db_password)
+    global sql_db
+    sql_db = pymysql.connect(host=db_server_name, user=db_user, password=db_password)
     execute_sql_query('CREATE DATABASE IF NOT EXISTS %s' % db_name)
     connect_to_sql_database(db_server_name, db_user, db_password, db_name, char_set, cusror_type)
 
 
 def connect_to_sql_database(db_server_name, db_user, db_password, db_name, char_set, cusror_type):
     print("connecting to db %s..." % db_name)
-    global db
-    db = pymysql.connect(host=db_server_name, user=db_user, password=db_password,
-                         db=db_name, charset=char_set, cursorclass=cusror_type)
+    global sql_db
+    sql_db = pymysql.connect(host=db_server_name, user=db_user, password=db_password,
+                             db=db_name, charset=char_set, cursorclass=cusror_type)
 
 
 def by_size(words, size):
@@ -327,7 +327,10 @@ def process_raw_h5file(path):
     animal_list_grouped_by_farmid = list(groups.values())
     # animal_list_grouped_by_farmid = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
     for group in animal_list_grouped_by_farmid:
-        process_raw_file(str(group[0][1]), group)
+        farm_id = str(group[0][1])
+        if farm_id != "70101200027":
+            continue
+        process_raw_file(farm_id, group)
 
 
 def process_raw_file(farm_id, data):
@@ -369,8 +372,12 @@ def process_raw_file(farm_id, data):
     print(sys.argv)
     if sys.argv[1] == 'sql':
         print("store data in sql database...")
-
-    exit(0)
+        create_sql_table("%s_resolution_f" % farm_id)
+        create_sql_table_("%s_resolution_m" % farm_id)
+        create_sql_table_("%s_resolution_w" % farm_id)
+        create_sql_table_("%s_resolution_d" % farm_id)
+        create_sql_table_("%s_resolution_h" % farm_id)
+        create_sql_table_("%s_resolution_h_h" % farm_id)
 
     if sys.argv[1] == 'h5':
         print("store data in h5 database...")
@@ -419,6 +426,13 @@ def process_raw_file(farm_id, data):
         signal_strength_min_m, signal_strength_max_m, battery_voltage_min_m, activity_level_sum_m, cpt_m = None, None, None, 0, 0
 
         cpt_record = 0
+        sql_records_f = []
+        sql_records_h_h = []
+        sql_records_h = []
+        sql_records_d = []
+        sql_records_w = []
+        sql_records_m = []
+
         for record in animal_group_s:
             # print(str(cpt_animal_group) + "/" + str(len(animal_list_grouped_by_serialn)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
             # size = len(individual)
@@ -428,6 +442,11 @@ def process_raw_file(farm_id, data):
             # print(record)
             if sys.argv[1] == 'h5':
                 add_record_to_table_single(table_f, record[0], record[2], record[3], record[4], record[5])
+
+            if sys.argv[1] == 'sql':
+                sql_records_f.append((record[0], record[2], record[3], record[4], record[5]))
+                # insert_record_to_sql_table("%s_resolution_f" % farm_id, record[0], record[2], record[3], record[4], record[5])
+
             if time_initial_s_h_h is False:
                 time_initial_s_h_h = True
                 time_initial_h_h = record[0]
@@ -556,6 +575,13 @@ def process_raw_file(farm_id, data):
                 if sys.argv[1] == 'h5':
                     add_record_to_table_sum(table_h_h, time_initial_h_h, record[2], signal_strength_max_h_h,
                                         signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
+
+                if sys.argv[1] == 'sql':
+                    sql_records_h_h.append((time_initial_h_h, record[2], signal_strength_max_h_h,
+                                        signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h))
+                    # insert_record_to_sql_table_("%s_resolution_h_h" % farm_id, time_initial_h_h, record[2], signal_strength_max_h_h,
+                    #                     signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
+
                 activity_level_sum_h_h = 0
                 cpt_h_h = 0
                 battery_voltage_min_h_h = None
@@ -567,6 +593,16 @@ def process_raw_file(farm_id, data):
                 if sys.argv[1] == 'h5':
                     add_record_to_table_sum(table_h, time_initial_h, record[2], signal_strength_max_h,
                                         signal_strength_min_h, battery_voltage_min_h, activity_level_sum_h)
+
+                if sys.argv[1] == 'sql':
+                    sql_records_h.append((time_initial_h, record[2],
+                                                signal_strength_max_h,
+                                                signal_strength_min_h, battery_voltage_min_h,
+                                                activity_level_sum_h))
+                    # insert_record_to_sql_table_("%s_resolution_h" % farm_id, time_initial_h, record[2],
+                    #                             signal_strength_max_h,
+                    #                             signal_strength_min_h, battery_voltage_min_h,
+                    #                             activity_level_sum_h)
                 activity_level_sum_h = 0
                 cpt_h = 0
                 battery_voltage_min_h = None
@@ -578,6 +614,16 @@ def process_raw_file(farm_id, data):
                 if sys.argv[1] == 'h5':
                     add_record_to_table_sum(table_d, time_initial_d, record[2], signal_strength_max_d,
                                         signal_strength_min_d, battery_voltage_min_d, activity_level_sum_d)
+
+                if sys.argv[1] == 'sql':
+                    sql_records_d.append((time_initial_d, record[2],
+                                                signal_strength_max_d,
+                                                signal_strength_min_d, battery_voltage_min_d,
+                                                activity_level_sum_d))
+                    # insert_record_to_sql_table_("%s_resolution_d" % farm_id, time_initial_d, record[2],
+                    #                             signal_strength_max_d,
+                    #                             signal_strength_min_d, battery_voltage_min_d,
+                    #                             activity_level_sum_d)
                 activity_level_sum_d = 0
                 cpt_d = 0
                 battery_voltage_min_d = None
@@ -597,6 +643,16 @@ def process_raw_file(farm_id, data):
                 if sys.argv[1] == 'h5':
                     add_record_to_table_sum(table_w, time_initial_w, record[2], signal_strength_max_w,
                                         signal_strength_min_w, battery_voltage_min_w, activity_level_sum_w)
+
+                if sys.argv[1] == 'sql':
+                    sql_records_w.append((time_initial_w, record[2],
+                                                signal_strength_max_w,
+                                                signal_strength_min_w, battery_voltage_min_w,
+                                                activity_level_sum_w))
+                    # insert_record_to_sql_table_("%s_resolution_w" % farm_id, time_initial_w, record[2],
+                    #                             signal_strength_max_w,
+                    #                             signal_strength_min_w, battery_voltage_min_w,
+                    #                             activity_level_sum_w)
                 activity_level_sum_w = 0
                 cpt_w = 0
                 battery_voltage_min_w = None
@@ -608,17 +664,39 @@ def process_raw_file(farm_id, data):
                 if sys.argv[1] == 'h5':
                     add_record_to_table_sum(table_m, time_initial_m, record[2], signal_strength_max_m,
                                         signal_strength_min_m, battery_voltage_min_m, activity_level_sum_m)
+
+                if sys.argv[1] == 'sql':
+                    sql_records_m.append((time_initial_m, record[2],
+                                                signal_strength_max_m,
+                                                signal_strength_min_m, battery_voltage_min_m,
+                                                activity_level_sum_m))
+                    # insert_record_to_sql_table_("%s_resolution_m" % farm_id, time_initial_m, record[2],
+                    #                             signal_strength_max_m,
+                    #                             signal_strength_min_m, battery_voltage_min_m,
+                    #                             activity_level_sum_m)
                 activity_level_sum_m = 0
                 cpt_m = 0
                 battery_voltage_min_m = None
                 signal_strength_min_m = None
                 signal_strength_max_m = None
-    table_f.flush()
-    table_h.flush()
-    table_m.flush()
-    table_w.flush()
-    table_d.flush()
-    table_h_h.flush()
+
+        if sys.argv[1] == 'sql':
+            insert_m_record_to_sql_table_("%s_resolution_m" % farm_id, sql_records_m)
+            insert_m_record_to_sql_table_("%s_resolution_w" % farm_id, sql_records_w)
+            insert_m_record_to_sql_table_("%s_resolution_d" % farm_id, sql_records_d)
+            insert_m_record_to_sql_table_("%s_resolution_h" % farm_id, sql_records_h)
+            insert_m_record_to_sql_table_("%s_resolution_h_h" % farm_id, sql_records_h_h)
+            insert_m_record_to_sql_table("%s_resolution_f" % farm_id, sql_records_f)
+            sql_db_flush()
+
+    if sys.argv[1] == 'h5':
+        table_f.flush()
+        table_h.flush()
+        table_m.flush()
+        table_w.flush()
+        table_d.flush()
+        table_h_h.flush()
+
     print("finished processing raw file.")
 
 
@@ -810,14 +888,17 @@ def generate_raw_file(farm_id):
     exit(0)
 
 
-if db_type == 0:
-    db_name = "south_africa"
-    create_and_connect_to_sql_db(db_name)
-    drop_all_tables(db_name)
-    create_sql_table("test")
-    execute_sql_query("SHOW TABLES")
+if __name__ == '__main__':
+    if sys.argv[1] == 'sql':
+        print("store data in sql database...")
+        db_name = "south_africa_test"
+        create_and_connect_to_sql_db(db_name)
+        # show_all_records_in_sql_table("delmas_70101200027_resolution_h_h")
+        drop_all_tables(db_name)
+
+    process_raw_h5file("C:\SouthAfrica\Tracking Data\\raw_data.h5")
+
     # generate_raw_files_from_xlsx("C:\Tracking Data")
-    # process_raw_h5file("C:\SouthAfrica\Tracking Data\\raw_data.h5")
     # farms = by_size(db_names, 11)
     # farms = ["70101100019", "70101200027"]
     # for farm_id in farms:
@@ -829,107 +910,107 @@ if db_type == 0:
     #         generate_raw_file(farm_id)
     #         process_raw_file(farm_id)
 
-if db_type == 1:
-    rows = 0
-    cluster = Cluster(['127.0.0.1'])
-    session = cluster.connect()
-    db_names = ["70101200027_small"]
-    for farm_id in db_names:
-        # if len(farm_id) < 11:
-        #     continue
-        print("farm id :" + farm_id)
-        # db = client[farm_id]
-        # colNames = db.list_collection_names()
-        # collection_count = 0
-        # colNames.sort()
-        session.execute("""
-            CREATE KEYSPACE IF NOT EXISTS \"%s\"
-            WITH replication = { 'class': 'SimpleStrategy', 'replication_factor': '5' }
-            """ % farm_id)
-        print("setting keyspace...")
-        session.set_keyspace(farm_id)
-        table_name = "data"
-
-        try:
-            # session.execute(
-            #     "CREATE TABLE if not exists " + "\"" + table_name + "\"" + " (id Text, epoch Int,control_station bigint,serial_number bigint," +
-            #     "signal_strength Int,battery_voltage Int,first_sensor_value Int,x_min Int,x_max Int,y_min Int,y_max Int,z_min Int,z_max Int, PRIMARY KEY(id))")
-            session.execute(
-                "CREATE TABLE if not exists " + "\"" + "test" + "\"" + " (id Int, PRIMARY KEY(id))")
-
-            n = 30000
-            for x in xrange(0, n):
-                query = """INSERT INTO """ + "\"" + str(
-                    farm_id) + "\"" + "." + "\"" + "test" + "\"" + """ (id) VALUES (%s)"""
-
-                future = session.execute_async(query % int(x))
-                block_future_res = future.result()
-                block_future_res.response_future
-                # print(block_future_res.response_future)
-                # print((x/max)*100)
-                a = 0
-
-        except Exception as e:
-            print(e)
-
-        exit(0)
-
-        # for collection_names_in_day in colNames:
-        #     collection = db[collection_names_in_day]
-        #     animals = collection.find_one()["animals"]
-        #     for animal in animals:
-        #         tag_data = animal["tag_data"]
-        #         serial_number = tag_data[0]["serial_number"]
-        #
-        #         for entry in tag_data:
-        #             ss = -1
-        #             if entry['signal_strength'] is not None and re.sub("[^0-9]", "", entry["signal_strength"]) != '':
-        #                 ss = int(re.sub("[^0-9]", "", entry["signal_strength"]))
-        #             bv = -1
-        #             if entry['battery_voltage'] is not None and re.sub("[^0-9]", "", entry["battery_voltage"]) != '':
-        #                 bv = int(re.sub("[^0-9]", "", entry["battery_voltage"]))
-        #             x_min, x_max, y_min, y_max, z_min, z_max = 0, 0, 0, 0, 0, 0
-        #             ssv = ""
-        #             if 'second_sensor_value' in entry:
-        #                 ssv = str(entry["second_sensor_value"])
-        #                 split = ssv.split(":")
-        #                 x_min, x_max, y_min, y_max, z_min, z_max = split[0], split[1], split[2], split[3], split[4], split[5]
-        #                 print(x_min + " " + x_max + " " + y_min + " " + y_max + " " + z_min + " " + z_max)
-        #
-        #             date_string = entry["date"] + " " + entry["time"]
-        #             epoch = int(datetime.strptime(date_string, '%d/%m/%y %I:%M:%S %p').timestamp())
-        #
-        #             farm = farm_id.split("_")
-        #
-        #             # query = """INSERT INTO """ + "\"" + str(
-        #             #     farm_id) + "\"" + "." + "\"" + table_name + "\"" + """ (id, epoch,""" +\
-        #             #     """control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, """ +\
-        #             #     """x_min, x_max, y_min, y_max, z_min, z_max) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-        #             query = """INSERT INTO """ + "\"" + str(farm_id) + "\"" + "." + "\"" + "test" + "\"" + """ (id) VALUES (%s)"""
-        #
-        #             id = str(epoch)+"-"+str(serial_number)+" "+str(uuid.uuid4())
-        #             try:
-        #                 # session.execute_async(query, (
-        #                 #     id, epoch, int(farm[0]), int(serial_number), ss, bv, int(entry["first_sensor_value"]), x_min, x_max,
-        #                 #     y_min, y_max, z_min, z_max))
-        #
-        #                 session.execute_async(query % int(rows))
-        #
-        #                 rows += 1
-        #
-        #             except Exception as e:
-        #                 print("error while insert into")
-        #                 print(e)
-        #             # try:
-        #             #     session.execute_async(query, (epoch, int(farm[0]), int(serial_number), ss, bv, int(entry["first_sensor_value"]),  x_min, x_max, y_min, y_max, z_min, z_max))
-        #             # except Exception as e:
-        #             #     print("error while insert into")
-        #             #     print(e)
-        #
-        #     collection_count = collection_count + 1
-        #     # if cpt >= 1:
-        #     #     break
-        #     print(str(collection_count) + "/" + str(len(colNames)) + " " + collection_names_in_day + "...")
-    print("finished added %s rows to cassandra" % str(rows))
+# if db_type == 1:
+#     rows = 0
+#     cluster = Cluster(['127.0.0.1'])
+#     session = cluster.connect()
+#     db_names = ["70101200027_small"]
+#     for farm_id in db_names:
+#         # if len(farm_id) < 11:
+#         #     continue
+#         print("farm id :" + farm_id)
+#         # db = client[farm_id]
+#         # colNames = db.list_collection_names()
+#         # collection_count = 0
+#         # colNames.sort()
+#         session.execute("""
+#             CREATE KEYSPACE IF NOT EXISTS \"%s\"
+#             WITH replication = { 'class': 'SimpleStrategy', 'replication_factor': '5' }
+#             """ % farm_id)
+#         print("setting keyspace...")
+#         session.set_keyspace(farm_id)
+#         table_name = "data"
+#
+#         try:
+#             # session.execute(
+#             #     "CREATE TABLE if not exists " + "\"" + table_name + "\"" + " (id Text, epoch Int,control_station bigint,serial_number bigint," +
+#             #     "signal_strength Int,battery_voltage Int,first_sensor_value Int,x_min Int,x_max Int,y_min Int,y_max Int,z_min Int,z_max Int, PRIMARY KEY(id))")
+#             session.execute(
+#                 "CREATE TABLE if not exists " + "\"" + "test" + "\"" + " (id Int, PRIMARY KEY(id))")
+#
+#             n = 30000
+#             for x in xrange(0, n):
+#                 query = """INSERT INTO """ + "\"" + str(
+#                     farm_id) + "\"" + "." + "\"" + "test" + "\"" + """ (id) VALUES (%s)"""
+#
+#                 future = session.execute_async(query % int(x))
+#                 block_future_res = future.result()
+#                 block_future_res.response_future
+#                 # print(block_future_res.response_future)
+#                 # print((x/max)*100)
+#                 a = 0
+#
+#         except Exception as e:
+#             print(e)
+#
+#         exit(0)
+#
+#         # for collection_names_in_day in colNames:
+#         #     collection = db[collection_names_in_day]
+#         #     animals = collection.find_one()["animals"]
+#         #     for animal in animals:
+#         #         tag_data = animal["tag_data"]
+#         #         serial_number = tag_data[0]["serial_number"]
+#         #
+#         #         for entry in tag_data:
+#         #             ss = -1
+#         #             if entry['signal_strength'] is not None and re.sub("[^0-9]", "", entry["signal_strength"]) != '':
+#         #                 ss = int(re.sub("[^0-9]", "", entry["signal_strength"]))
+#         #             bv = -1
+#         #             if entry['battery_voltage'] is not None and re.sub("[^0-9]", "", entry["battery_voltage"]) != '':
+#         #                 bv = int(re.sub("[^0-9]", "", entry["battery_voltage"]))
+#         #             x_min, x_max, y_min, y_max, z_min, z_max = 0, 0, 0, 0, 0, 0
+#         #             ssv = ""
+#         #             if 'second_sensor_value' in entry:
+#         #                 ssv = str(entry["second_sensor_value"])
+#         #                 split = ssv.split(":")
+#         #                 x_min, x_max, y_min, y_max, z_min, z_max = split[0], split[1], split[2], split[3], split[4], split[5]
+#         #                 print(x_min + " " + x_max + " " + y_min + " " + y_max + " " + z_min + " " + z_max)
+#         #
+#         #             date_string = entry["date"] + " " + entry["time"]
+#         #             epoch = int(datetime.strptime(date_string, '%d/%m/%y %I:%M:%S %p').timestamp())
+#         #
+#         #             farm = farm_id.split("_")
+#         #
+#         #             # query = """INSERT INTO """ + "\"" + str(
+#         #             #     farm_id) + "\"" + "." + "\"" + table_name + "\"" + """ (id, epoch,""" +\
+#         #             #     """control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, """ +\
+#         #             #     """x_min, x_max, y_min, y_max, z_min, z_max) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+#         #             query = """INSERT INTO """ + "\"" + str(farm_id) + "\"" + "." + "\"" + "test" + "\"" + """ (id) VALUES (%s)"""
+#         #
+#         #             id = str(epoch)+"-"+str(serial_number)+" "+str(uuid.uuid4())
+#         #             try:
+#         #                 # session.execute_async(query, (
+#         #                 #     id, epoch, int(farm[0]), int(serial_number), ss, bv, int(entry["first_sensor_value"]), x_min, x_max,
+#         #                 #     y_min, y_max, z_min, z_max))
+#         #
+#         #                 session.execute_async(query % int(rows))
+#         #
+#         #                 rows += 1
+#         #
+#         #             except Exception as e:
+#         #                 print("error while insert into")
+#         #                 print(e)
+#         #             # try:
+#         #             #     session.execute_async(query, (epoch, int(farm[0]), int(serial_number), ss, bv, int(entry["first_sensor_value"]),  x_min, x_max, y_min, y_max, z_min, z_max))
+#         #             # except Exception as e:
+#         #             #     print("error while insert into")
+#         #             #     print(e)
+#         #
+#         #     collection_count = collection_count + 1
+#         #     # if cpt >= 1:
+#         #     #     break
+#         #     print(str(collection_count) + "/" + str(len(colNames)) + " " + collection_names_in_day + "...")
+#     print("finished added %s rows to cassandra" % str(rows))
 
 
