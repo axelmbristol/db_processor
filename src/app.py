@@ -1,7 +1,7 @@
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import tables
@@ -55,7 +55,7 @@ def add_record_to_sql_table():
     print(5)
 
 
-def execute_sql_query(query, records=None, log_enabled=False):
+def execute_sql_query(query, records=None, log_enabled=True):
     try:
         global sql_db
         cursor = sql_db.cursor()
@@ -85,12 +85,12 @@ def show_all_records_in_sql_table(table_name):
 
 
 def insert_m_record_to_sql_table(table_id, records):
-    query = "INSERT INTO `"+table_id+"` (timestamp, serial_number, signal_strength, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s)"
+    query = "INSERT INTO `"+table_id+"` (timestamp, timestamp_s, serial_number, signal_strength, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s)"
     execute_sql_query(query, records)
 
 
 def insert_m_record_to_sql_table_(table_id, records):
-    query = "INSERT INTO `" + table_id + "` (timestamp, serial_number, signal_strength_max, signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s)"
+    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)"
     execute_sql_query(query, records)
 
 
@@ -103,7 +103,7 @@ def insert_record_to_sql_table(table_id, timestamp, timestamp_s, serial_number_s
 
 def insert_record_to_sql_table_(table_id, timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage,
                                 activity_level_avg):
-    values = (timestamp, serial_number, signal_strength_max, signal_strength_min, battery_voltage, activity_level_avg)
+    values = (timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage, activity_level_avg)
     query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)" % values
     execute_sql_query(query)
 
@@ -433,10 +433,12 @@ def process_raw_file(farm_id, data):
         sql_records_w = []
         sql_records_m = []
 
-        for record in animal_group_s:
+        for idx, record in enumerate(animal_group_s):
+            next_record = animal_group_s[(idx+1) % len(animal_group_s)]
             # print(str(cpt_animal_group) + "/" + str(len(animal_list_grouped_by_serialn)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
             # size = len(individual)
             # for i, record in enumerate(individual):
+
             cpt_record += 1
             # print(str(int((i/size) * 100)) + "%% " + str(cpt_record) + "/" + str(len(individual)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
             # print(record)
@@ -444,7 +446,13 @@ def process_raw_file(farm_id, data):
                 add_record_to_table_single(table_f, record[0], record[2], record[3], record[4], record[5])
 
             if sys.argv[1] == 'sql':
-                sql_records_f.append((record[0], record[2], record[3], record[4], record[5]))
+                sql_records_f.append((record[0], datetime.utcfromtimestamp(record[0]).strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], record[5]))
+
+                for n in xrange(1, get_elapsed_minutes(record[0], next_record[0])):
+                    time_g = (datetime.utcfromtimestamp(record[0]) + timedelta(minutes=n)).strftime('%Y-%m-%dT%H:%M')
+                    epoch_g = int(datetime.strptime(time_g, '%Y-%m-%dT%H:%M').timestamp())
+                    sql_records_f.append((epoch_g, time_g, record[2], -1, -1, -1))
+
                 # insert_record_to_sql_table("%s_resolution_f" % farm_id, record[0], record[2], record[3], record[4], record[5])
 
             if time_initial_s_h_h is False:
@@ -577,7 +585,8 @@ def process_raw_file(farm_id, data):
                                         signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
 
                 if sys.argv[1] == 'sql':
-                    sql_records_h_h.append((time_initial_h_h, record[2], signal_strength_max_h_h,
+                    sql_records_h_h.append((time_initial_h_h, datetime.utcfromtimestamp(time_initial_h_h).strftime('%Y-%m-%dT%H:%M'),
+                                            record[2], signal_strength_max_h_h,
                                         signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h))
                     # insert_record_to_sql_table_("%s_resolution_h_h" % farm_id, time_initial_h_h, record[2], signal_strength_max_h_h,
                     #                     signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
@@ -595,7 +604,8 @@ def process_raw_file(farm_id, data):
                                         signal_strength_min_h, battery_voltage_min_h, activity_level_sum_h)
 
                 if sys.argv[1] == 'sql':
-                    sql_records_h.append((time_initial_h, record[2],
+                    sql_records_h.append((time_initial_h, datetime.utcfromtimestamp(time_initial_h).strftime('%Y-%m-%dT%H:%M'),
+                                                record[2],
                                                 signal_strength_max_h,
                                                 signal_strength_min_h, battery_voltage_min_h,
                                                 activity_level_sum_h))
@@ -616,7 +626,7 @@ def process_raw_file(farm_id, data):
                                         signal_strength_min_d, battery_voltage_min_d, activity_level_sum_d)
 
                 if sys.argv[1] == 'sql':
-                    sql_records_d.append((time_initial_d, record[2],
+                    sql_records_d.append((time_initial_d, datetime.utcfromtimestamp(time_initial_d).strftime('%Y-%m-%dT%H:%M'), record[2],
                                                 signal_strength_max_d,
                                                 signal_strength_min_d, battery_voltage_min_d,
                                                 activity_level_sum_d))
@@ -645,7 +655,7 @@ def process_raw_file(farm_id, data):
                                         signal_strength_min_w, battery_voltage_min_w, activity_level_sum_w)
 
                 if sys.argv[1] == 'sql':
-                    sql_records_w.append((time_initial_w, record[2],
+                    sql_records_w.append((time_initial_w, datetime.utcfromtimestamp(time_initial_w).strftime('%Y-%m-%dT%H:%M'), record[2],
                                                 signal_strength_max_w,
                                                 signal_strength_min_w, battery_voltage_min_w,
                                                 activity_level_sum_w))
@@ -666,7 +676,7 @@ def process_raw_file(farm_id, data):
                                         signal_strength_min_m, battery_voltage_min_m, activity_level_sum_m)
 
                 if sys.argv[1] == 'sql':
-                    sql_records_m.append((time_initial_m, record[2],
+                    sql_records_m.append((time_initial_m, datetime.utcfromtimestamp(time_initial_m).strftime('%Y-%m-%dT%H:%M'), record[2],
                                                 signal_strength_max_m,
                                                 signal_strength_min_m, battery_voltage_min_m,
                                                 activity_level_sum_m))
