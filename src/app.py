@@ -291,8 +291,7 @@ def get_elapsed_hours(time_initial, time_next):
 def get_elapsed_minutes(time_initial, time_next):
     dt1 = datetime.fromtimestamp(time_initial)
     dt2 = datetime.fromtimestamp(time_next)
-    rd = dateutil.relativedelta.relativedelta(dt2, dt1)
-    return rd.minutes
+    return (dt2 - dt1).total_seconds() / 60
 
 
 def get_elapsed_time_string(time_initial, time_next):
@@ -300,6 +299,13 @@ def get_elapsed_time_string(time_initial, time_next):
     dt2 = datetime.fromtimestamp(time_next)
     rd = dateutil.relativedelta.relativedelta(dt2, dt1)
     return '%02d:%02d:%02d:%02d' % (rd.days, rd.hours, rd.minutes, rd.seconds)
+
+
+def get_elapsed_time(time_initial, time_next):
+    dt1 = datetime.fromtimestamp(time_initial)
+    dt2 = datetime.fromtimestamp(time_next)
+    rd = dateutil.relativedelta.relativedelta(dt2, dt1)
+    return [rd.days, rd.hours, rd.minutes, rd.seconds]
 
 
 def process_raw_h5file(path):
@@ -331,6 +337,12 @@ def process_raw_h5file(path):
         if farm_id != "70101200027":
             continue
         process_raw_file(farm_id, group)
+
+
+def check_if_same_day(curr_date_time, next_date_time):
+    return curr_date_time.year == next_date_time.year and curr_date_time.month == next_date_time.month and\
+           curr_date_time.day == next_date_time.day and curr_date_time.hour == next_date_time.hour and\
+           curr_date_time.minute == next_date_time.minute
 
 
 def process_raw_file(farm_id, data):
@@ -433,12 +445,21 @@ def process_raw_file(farm_id, data):
         sql_records_w = []
         sql_records_m = []
 
+        i_to_jump = []
         for idx, record in enumerate(animal_group_s):
+
+            if record[0] in i_to_jump:
+                continue
+
+            # if record[2] != 40101310050:
+            #     continue
+
             next_record = animal_group_s[(idx+1) % len(animal_group_s)]
+            next_next_record = animal_group_s[(idx + 2) % len(animal_group_s)]
+            next_next_next_record = animal_group_s[(idx + 3) % len(animal_group_s)]
             # print(str(cpt_animal_group) + "/" + str(len(animal_list_grouped_by_serialn)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
             # size = len(individual)
             # for i, record in enumerate(individual):
-
             cpt_record += 1
             # print(str(int((i/size) * 100)) + "%% " + str(cpt_record) + "/" + str(len(individual)) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
             # print(record)
@@ -446,12 +467,66 @@ def process_raw_file(farm_id, data):
                 add_record_to_table_single(table_f, record[0], record[2], record[3], record[4], record[5])
 
             if sys.argv[1] == 'sql':
-                sql_records_f.append((record[0], datetime.utcfromtimestamp(record[0]).strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], record[5]))
 
-                for n in xrange(1, get_elapsed_minutes(record[0], next_record[0])):
+                #todo clean up that mess
+                activity_sum = 0
+                curr_date_time = datetime.utcfromtimestamp(record[0])
+                next_date_time = datetime.utcfromtimestamp(next_record[0])
+                next_next_date_time = datetime.utcfromtimestamp(next_next_record[0])
+                next_next_next_date_time = datetime.utcfromtimestamp(next_next_next_record[0])
+
+                if check_if_same_day(curr_date_time, next_date_time) and check_if_same_day(next_date_time, next_next_date_time) and check_if_same_day(next_next_date_time, next_next_next_date_time):
+                        activity_sum = record[5] + next_record[5] + next_next_record[5] + next_next_next_record[5]
+                        sql_records_f.append((record[0], curr_date_time.strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], activity_sum))
+                        #print((record[0], curr_date_time.strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], activity_sum))
+                        #todo skip next record
+                        i_to_jump.append(next_record[0])
+                        i_to_jump.append(next_next_record[0])
+                        i_to_jump.append(next_next_next_record[0])
+                        continue
+
+                if check_if_same_day(curr_date_time, next_date_time) and check_if_same_day(next_date_time, next_next_date_time):
+                        activity_sum = record[5] + next_record[5] + next_next_record[5]
+                        sql_records_f.append((record[0], curr_date_time.strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], activity_sum))
+                        #print((record[0], curr_date_time.strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], activity_sum))
+                        #todo skip next record
+                        i_to_jump.append(next_record[0])
+                        i_to_jump.append(next_next_record[0])
+                        continue
+
+                if check_if_same_day(curr_date_time, next_date_time):
+                        activity_sum = record[5] + next_record[5]
+                        sql_records_f.append((record[0], curr_date_time.strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], activity_sum))
+                        #print((record[0], curr_date_time.strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], activity_sum))
+                        #todo skip next record
+                        i_to_jump.append(next_record[0])
+
+                        # trunc out seconds
+                        minutes = get_elapsed_minutes(time.mktime(
+                            datetime.strptime(curr_date_time.strftime('%Y-%m-%dT%H:%M'), "%Y-%m-%dT%H:%M").timetuple()),
+                                                      time.mktime(
+                                                          datetime.strptime(next_next_date_time.strftime('%Y-%m-%dT%H:%M'),
+                                                                            "%Y-%m-%dT%H:%M").timetuple()))
+                        minutes_rounded = int(np.round(minutes))
+
+                        for n in xrange(1, minutes_rounded):
+                            time_g = (datetime.utcfromtimestamp(record[0]) + timedelta(minutes=n)).strftime(
+                                '%Y-%m-%dT%H:%M')
+                            epoch_g = int(datetime.strptime(time_g, '%Y-%m-%dT%H:%M').timestamp())
+                            sql_records_f.append((epoch_g, time_g, record[2], None, None, None))
+                        continue
+
+                if record[0] not in i_to_jump:
+                    sql_records_f.append((record[0], curr_date_time.strftime('%Y-%m-%dT%H:%M'), record[2], record[3], record[4], record[5]))
+
+                #trunc out seconds
+                minutes = get_elapsed_minutes(time.mktime(datetime.strptime(curr_date_time.strftime('%Y-%m-%dT%H:%M'), "%Y-%m-%dT%H:%M").timetuple()), time.mktime(datetime.strptime(next_date_time.strftime('%Y-%m-%dT%H:%M'), "%Y-%m-%dT%H:%M").timetuple()))
+                minutes_rounded = int(np.round(minutes))
+
+                for n in xrange(1, minutes_rounded):
                     time_g = (datetime.utcfromtimestamp(record[0]) + timedelta(minutes=n)).strftime('%Y-%m-%dT%H:%M')
                     epoch_g = int(datetime.strptime(time_g, '%Y-%m-%dT%H:%M').timestamp())
-                    sql_records_f.append((epoch_g, time_g, record[2], -1, -1, -1))
+                    sql_records_f.append((epoch_g, time_g, record[2], None, None, None))
 
                 # insert_record_to_sql_table("%s_resolution_f" % farm_id, record[0], record[2], record[3], record[4], record[5])
 
@@ -901,7 +976,7 @@ def generate_raw_file(farm_id):
 if __name__ == '__main__':
     if sys.argv[1] == 'sql':
         print("store data in sql database...")
-        db_name = "south_africa_test"
+        db_name = "south_africa_test3"
         create_and_connect_to_sql_db(db_name)
         # show_all_records_in_sql_table("delmas_70101200027_resolution_h_h")
         drop_all_tables(db_name)
