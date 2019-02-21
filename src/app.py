@@ -1,4 +1,6 @@
+import math
 import os
+import os.path
 import re
 import uuid
 import math
@@ -19,6 +21,12 @@ import xlrd
 import pandas
 import sys
 import pymysql
+import tables
+import xlrd
+from ipython_genutils.py3compat import xrange
+from tables import *
+from functools import partial
+from multiprocessing import Pool
 
 sql_db = None
 
@@ -30,12 +38,6 @@ class Animal(IsDescription):
     signal_strength = Int16Col()
     battery_voltage = Int16Col()
     first_sensor_value = Int32Col()
-    # x_max = Int8Col()
-    # x_min = Int8Col()
-    # y_max = Int8Col()
-    # y_min = Int8Col()
-    # z_max = Int8Col()
-    # z_min = Int8Col()
 
 
 class Animal2(IsDescription):
@@ -47,22 +49,13 @@ class Animal2(IsDescription):
     first_sensor_value = Int32Col()
 
 
-# print('init mongoDB...')
-# client = MongoClient('localhost', 27017)
-# db_names = client.list_database_names()
-db_type = 0
-
-
-def add_record_to_sql_table():
-    print(5)
-
-
-def execute_sql_query(query, records=None, log_enabled=True):
+def execute_sql_query(query, records=None, log_enabled=False):
     try:
         global sql_db
         cursor = sql_db.cursor()
         if records is not None:
-            print("SQL Query: %s" % query, records[0])
+            if log_enabled:
+                print("SQL Query: %s" % query, records[0])
             cursor.executemany(query, records)
         else:
             if log_enabled:
@@ -87,19 +80,22 @@ def show_all_records_in_sql_table(table_name):
 
 
 def insert_m_record_to_sql_table(table_id, records):
-    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s)"
+    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength, battery_voltage, " \
+                                         "first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s)"
     execute_sql_query(query, records)
 
 
 def insert_m_record_to_sql_table_(table_id, records):
-    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max, " \
+                                         "signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)"
     execute_sql_query(query, records)
 
 
 def insert_record_to_sql_table(table_id, timestamp, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s,
                                first_sensor_value):
     values = (timestamp, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s, first_sensor_value)
-    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength, battery_voltage, first_sensor_value) VALUES (%d, %s, %d, %d, %d, %d)" % values
+    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength, battery_voltage, " \
+                                         "first_sensor_value) VALUES (%d, %s, %d, %d, %d, %d)" % values
     execute_sql_query(query)
 
 
@@ -108,7 +104,8 @@ def insert_record_to_sql_table_(table_id, timestamp, timestamp_s, serial_number,
                                 activity_level_avg):
     values = (timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage,
               activity_level_avg)
-    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max, signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)" % values
+    query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max," \
+                                         " signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)" % values
     execute_sql_query(query)
 
 
@@ -219,12 +216,6 @@ def add_record_to_table(table, data):
         table_row['signal_strength'] = signal_strength
         table_row['battery_voltage'] = battery_voltage
         table_row['first_sensor_value'] = first_sensor_value
-        # animal_h5_table_row['x_min'] = x_min
-        # animal_h5_table_row['y_min'] = y_min
-        # animal_h5_table_row['z_min'] = z_min
-        # animal_h5_table_row['x_max'] = x_max
-        # animal_h5_table_row['y_max'] = y_max
-        # animal_h5_table_row['z_max'] = z_max
         table_row.append()
 
 
@@ -239,10 +230,6 @@ def add_record_to_table_sum(table, timestamp_f, serial_number_f, signal_strenght
     table_row['battery_voltage'] = battery_voltage_min
     table_row['first_sensor_value'] = activity_level_avg
     table_row.append()
-    # table.flush()
-    # if table.size_in_memory >= 100999999:
-    #     table.flush()
-    #     print("sum flush...")
 
 
 def add_record_to_table_single(table, timestamp_s, serial_number_s, signal_strength_s, battery_voltage_s,
@@ -255,9 +242,6 @@ def add_record_to_table_single(table, timestamp_s, serial_number_s, signal_stren
     table_row['first_sensor_value'] = activity_level_s
     # print(timestamp_s, serial_number_s, signal_strenght_s, battery_voltage_s, activity_level_s, table.size_in_memory)
     table_row.append()
-    # if table.size_in_memory >= 100999999:
-    #     table.flush()
-    #     print("flush...")
 
 
 def is_same_day(time_initial, time_next):
@@ -316,14 +300,14 @@ def process_raw_h5files(path):
     data = h5_raw.root.table
     list_raw = []
     print("loading data...")
-    cpt = 0
+    # cpt = 0
     for idx, x in enumerate(data):  # need idx for data iteration?
         farm_id = x['control_station']
-        # if farm_id != 70101200027: #todo remove
-        #     continue
-        cpt += 1
-        if cpt > 100000:
-            break
+        if farm_id != 70101200027: #todo remove
+            continue
+        # cpt += 1
+        # if cpt > 100000:
+        #     break
         value = (x['timestamp'], farm_id, x['serial_number'], x['signal_strength'], x['battery_voltage'],
                  x['first_sensor_value'])
         list_raw.append(value)
@@ -362,6 +346,7 @@ def get_list_average(l):
 
 
 def format_farm_id(farm_id):
+
     if farm_id == "70091100056":
         farm_id = "Cedara_" + farm_id
 
@@ -379,6 +364,7 @@ def format_farm_id(farm_id):
 
     if farm_id == "70101200027":
         farm_id = "Delmas_" + farm_id
+
     return farm_id
 
 
@@ -386,12 +372,12 @@ def init_database(farm_id):
     print(sys.argv)
     if sys.argv[1] == 'sql':
         print("store data in sql database...")
-        create_sql_table("%s_resolution_f" % farm_id)
+        create_sql_table("%s_resolution_min" % farm_id)
         create_sql_table_("%s_resolution_m" % farm_id)
         create_sql_table_("%s_resolution_w" % farm_id)
         create_sql_table_("%s_resolution_d" % farm_id)
         create_sql_table_("%s_resolution_h" % farm_id)
-        create_sql_table_("%s_resolution_h_h" % farm_id)
+        return None, None, None, None, None
 
     if sys.argv[1] == 'h5':
         print("store data in h5 database...")
@@ -405,20 +391,19 @@ def init_database(farm_id):
             # purge_file(farm_id + ".h5")
             h5file = tables.open_file(farm_id + ".h5", "w", driver="H5FD_CORE")
 
-        group_f = h5file.create_group("/", "resolution_f", 'raw data')
+        group_min = h5file.create_group("/", "resolution_min", 'resolution per min')
         group_m = h5file.create_group("/", "resolution_m", 'resolution per month')
         group_w = h5file.create_group("/", "resolution_w", 'resolution per week')
         group_d = h5file.create_group("/", "resolution_d", 'resolution per day')
         group_h = h5file.create_group("/", "resolution_h", 'resolution per hour')
-        group_h_h = h5file.create_group("/", "resolution_h_h", 'resolution per 10 minutes')
 
-        table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
-        table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
-        table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
-        table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
+        table_min = h5file.create_table(group_min, "data", Animal, "Animal data activity level averaged by min")
         table_h = h5file.create_table(group_h, "data", Animal2, "Animal data activity level averaged by hour")
-        table_h_h = h5file.create_table(group_h_h, "data", Animal2, "Animal data activity level averaged by 10 minutes")
-        return table_f, table_m, table_w, table_d, table_h, table_h_h
+        table_d = h5file.create_table(group_d, "data", Animal2, "Animal data activity level averaged by day")
+        table_w = h5file.create_table(group_w, "data", Animal2, "Animal data activity level averaged by week")
+        table_m = h5file.create_table(group_m, "data", Animal2, "Animal data activity level averaged by month")
+
+        return table_min, table_h, table_d, table_w, table_m
 
 
 def resample_to_min(first_timestamp, last_timestamp, animal_records):
@@ -428,50 +413,21 @@ def resample_to_min(first_timestamp, last_timestamp, animal_records):
     for i in xrange(0, n_minutes_in_between):
         next_timestamp = first_timestamp + timedelta(minutes=i)
         next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        serial_number = animal_records[0][2]  # just take first record and get serial number
         structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
-                                                      next_timestamp_human_readable, None, None, None, None]
+                                                      next_timestamp_human_readable, serial_number, None, None, None]
 
     # fill in resampled structure with records data
     for record in animal_records:
         record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d %H:%M:00")
         if record_timestamp_f in structure_m:
             struct = structure_m[record_timestamp_f]
-            struct[2] = record[2]
-            struct[3] = record[3]
-            struct[4] = record[4]
-            struct[5] = 0
-            struct[5] += record[5]  # accumulate activity level if in same min
-            # filled in record data in struct save to array for save in db
-            data.append(tuple(struct))
-
-    return data
-
-
-def resample_to_hour(first_timestamp, last_timestamp, animal_records):
-    data = []
-    n_hours_in_between = int(get_elapsed_minutes(first_timestamp, last_timestamp) / 60)
-    structure_m = {}
-    for i in xrange(0, n_hours_in_between):
-        next_timestamp = first_timestamp + timedelta(hours=i)
-        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        print(next_timestamp_human_readable)
-        serial_number = animal_records[0][2] #just take first record and get serial number
-        structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
-                                                      next_timestamp_human_readable, serial_number, None, None, None]
-
-    # fill in resampled structure with records data
-    for record in animal_records:
-        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d %H:00:00")
-        if record_timestamp_f in structure_m:
-            struct = structure_m[record_timestamp_f]
             if struct[3] is None:
                 struct[3] = []
             struct[3].append(record[3]) #signal strenght
-
             if struct[4] is None:
                 struct[4] = []
             struct[4].append(record[4]) #battery level
-
             if struct[5] is None:
                 struct[5] = 0
             struct[5] += record[5]  # accumulate activity level if in same hour
@@ -483,14 +439,160 @@ def resample_to_hour(first_timestamp, last_timestamp, animal_records):
             data.append(record)
         else:
             data.append((record[0], record[1], record[2], get_list_average(record[3]), get_list_average(record[4]), activity))
+    return data
 
+
+def resample_to_hour(first_timestamp, last_timestamp, animal_records):
+    data = []
+    n_hours_in_between = int(get_elapsed_minutes(first_timestamp, last_timestamp) / 60)
+    structure_m = {}
+    for i in xrange(0, n_hours_in_between):
+        next_timestamp = first_timestamp + timedelta(hours=i)
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        serial_number = animal_records[0][2] #just take first record and get serial number
+        structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
+                                                      next_timestamp_human_readable, serial_number, None, None, None, None]
+
+    # fill in resampled structure with records data
+    for record in animal_records:
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d %H:00:00")
+        if record_timestamp_f in structure_m:
+            struct = structure_m[record_timestamp_f]
+            if struct[3] is None:
+                struct[3] = []
+            struct[3].append(record[3]) #signal strenght
+            if struct[4] is None:
+                struct[4] = []
+            struct[4].append(record[4]) #battery level
+            if struct[5] is None:
+                struct[5] = 0
+            struct[5] += record[5]  # accumulate activity level if in same hour
+
+    # filled in record data in struct save to array for save in db
+    for record in structure_m.values():
+        activity = record[5]
+        if activity is None:
+            data.append(record)
+        else:
+            data.append((record[0], record[1], record[2], max(record[3]), min(record[3]), min(record[4]), activity))
+    return data
+
+
+def resample_to_day(first_timestamp, last_timestamp, animal_records):
+    data = []
+    n_days_in_between = int(get_elapsed_minutes(first_timestamp, last_timestamp)/60/24)
+    structure_m = {}
+    #build the time structure
+    for i in xrange(0, n_days_in_between):
+        next_timestamp = first_timestamp + timedelta(days=i)
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d 00:00:00")
+        serial_number = animal_records[0][2] #just take first record and get serial number
+        structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
+                                                      next_timestamp_human_readable, serial_number, None, None, None, None]
+
+    # fill in resampled structure with records data
+    for record in animal_records:
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d 00:00:00")
+        if record_timestamp_f in structure_m:
+            struct = structure_m[record_timestamp_f]
+            if struct[3] is None:
+                struct[3] = []
+            struct[3].append(record[3]) #signal strenght
+            if struct[4] is None:
+                struct[4] = []
+            struct[4].append(record[4]) #battery level
+            if struct[5] is None:
+                struct[5] = 0
+            struct[5] += record[5]  # accumulate activity level if in same hour
+
+    # filled in record data in struct save to array for save in db
+    for record in structure_m.values():
+        activity = record[5]
+        if activity is None:
+            data.append(record)
+        else:
+            data.append((record[0], record[1], record[2], max(record[3]), min(record[3]), min(record[4]), activity))
+    return data
+
+
+def resample_to_week(first_timestamp, last_timestamp, animal_records):
+    data = []
+    n_weeks_in_between = int(math.ceil(get_elapsed_minutes(first_timestamp, last_timestamp)/60/24/7))
+    structure_m = {}
+    #build the time structure
+    for i in xrange(0, n_weeks_in_between):
+        next_timestamp = first_timestamp + timedelta(days=i*7)
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d 00:00:00")
+        serial_number = animal_records[0][2] #just take first record and get serial number
+        structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
+                                                      next_timestamp_human_readable, serial_number, None, None, None, None]
+
+    # fill in resampled structure with records data
+    for record in animal_records:
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d 00:00:00")
+        if record_timestamp_f in structure_m:
+            struct = structure_m[record_timestamp_f]
+            if struct[3] is None:
+                struct[3] = []
+            struct[3].append(record[3]) #signal strenght
+            if struct[4] is None:
+                struct[4] = []
+            struct[4].append(record[4]) #battery level
+            if struct[5] is None:
+                struct[5] = 0
+            struct[5] += record[5]  # accumulate activity level if in same hour
+
+    # filled in record data in struct save to array for save in db
+    for record in structure_m.values():
+        activity = record[5]
+        if activity is None:
+            data.append(record)
+        else:
+            data.append((record[0], record[1], record[2], max(record[3]), min(record[3]), min(record[4]), activity))
+    return data
+
+
+def resample_to_month(first_timestamp, last_timestamp, animal_records):
+    data = []
+    n_months_in_between = int(math.ceil(get_elapsed_minutes(first_timestamp, last_timestamp)/60/24/7/30))
+    structure_m = {}
+    #build the time structure
+    for i in xrange(0, n_months_in_between):
+        next_timestamp = first_timestamp + timedelta(days=i*30)
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d 00:00:00")
+        serial_number = animal_records[0][2] #just take first record and get serial number
+        structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
+                                                      next_timestamp_human_readable, serial_number, None, None, None, None]
+
+    # fill in resampled structure with records data
+    for record in animal_records:
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d 00:00:00")
+        if record_timestamp_f in structure_m:
+            struct = structure_m[record_timestamp_f]
+            if struct[3] is None:
+                struct[3] = []
+            struct[3].append(record[3]) #signal strenght
+            if struct[4] is None:
+                struct[4] = []
+            struct[4].append(record[4]) #battery level
+            if struct[5] is None:
+                struct[5] = 0
+            struct[5] += record[5]  # accumulate activity level if in same hour
+
+    # filled in record data in struct save to array for save in db
+    for record in structure_m.values():
+        activity = record[5]
+        if activity is None:
+            data.append(record)
+        else:
+            data.append((record[0], record[1], record[2], max(record[3]), min(record[3]), min(record[4]), activity))
     return data
 
 
 def process_raw_file(farm_id, data):
     start_time = time.time()
     farm_id = format_farm_id(farm_id)
-    init_database(farm_id)
+    table_min, table_h, table_d, table_w, table_m = init_database(farm_id)
     print("process data for farm %s." % farm_id)
 
     # group records by animal id/serial number
@@ -499,343 +601,72 @@ def process_raw_file(farm_id, data):
         groups[obj[2]].append(obj)
     animal_list_grouped_by_serialn = list(groups.values())
 
-    # find first and last record date.
-    for animal_records in animal_list_grouped_by_serialn:
+    data_resampled_min = []
+    data_resampled_hour = []
+    data_resampled_day = []
+    data_resampled_week = []
+    data_resampled_month = []
+    MULTI_THREADING_ENABLED = True
+
+    if MULTI_THREADING_ENABLED:
+        pool = Pool(processes=5)
+
+    for idx, animal_records in enumerate(animal_list_grouped_by_serialn):
+        print("progress=%d/%d." % (idx, len(animal_list_grouped_by_serialn)))
+        # find first and last record date.
         first_timestamp, last_timestamp = get_first_last_timestamp(animal_records)
-        data_resampled_min = resample_to_min(first_timestamp, last_timestamp, animal_records)
-        data_resampled_hour = resample_to_hour(first_timestamp, last_timestamp, animal_records)
-
-    exit(0)
-
-    cpt_animal_group = 0
-    size = len(animal_list_grouped_by_serialn)
-    for index, animal_group in enumerate(animal_list_grouped_by_serialn):
-        cpt_animal_group += 1
-        print(farm_id + " " + str(int((index / size) * 100)) + "% " + str(cpt_animal_group) + "/" + str(
-            size) + " " + get_elapsed_time_string(start_time, time.time()) + " ...")
-
-        animal_group_s = sorted(animal_group, key=lambda x: x[0])
-        # animal_group_s = [i for n, i in enumerate(grouped_list) if i not in grouped_list[n + 1:]]
-
-        time_initial_h_h, time_initial_h, time_initial_d, time_initial_w, time_initial_m, time_next = 0, 0, 0, 0, 0, 0
-        time_initial_s_h_h, time_initial_s_h, time_initial_s_d, time_initial_s_w, time_initial_s_m, time_next_s = False, False, False, False, False, False
-
-        signal_strength_min_h_h, signal_strength_max_h_h, battery_voltage_min_h_h, activity_level_sum_h_h, cpt_h_h = None, None, None, 0, 0
-        signal_strength_min_h, signal_strength_max_h, battery_voltage_min_h, activity_level_sum_h, cpt_h = None, None, None, 0, 0
-        signal_strength_min_d, signal_strength_max_d, battery_voltage_min_d, activity_level_sum_d, cpt_d = None, None, None, 0, 0
-        signal_strength_min_w, signal_strength_max_w, battery_voltage_min_w, activity_level_sum_w, cpt_w = None, None, None, 0, 0
-        signal_strength_min_m, signal_strength_max_m, battery_voltage_min_m, activity_level_sum_m, cpt_m = None, None, None, 0, 0
-
-        cpt_record = 0
-        sql_records_f = []
-        sql_records_h_h = []
-        sql_records_h = []
-        sql_records_d = []
-        sql_records_w = []
-        sql_records_m = []
-
-        i_to_jump = []
-
-        dict = {}
-        first_date = datetime.utcfromtimestamp(animal_group_s[0][0])
-        last_date = datetime.utcfromtimestamp(animal_group_s[-1][0])
-        # trunc out seconds
-        minutes = get_elapsed_minutes(
-            time.mktime(datetime.strptime(first_date.strftime('%Y-%m-%dT%H:%M'), "%Y-%m-%dT%H:%M").timetuple()),
-            time.mktime(datetime.strptime(last_date.strftime('%Y-%m-%dT%H:%M'), "%Y-%m-%dT%H:%M").timetuple()))
-        minutes_rounded = int(np.round(minutes))
-
-        for n in xrange(0, minutes_rounded + 1):
-            time_g = (first_date + timedelta(minutes=n)).strftime('%Y-%m-%dT%H:%M')
-            dict[time_g] = []
-
-        for idx, record in enumerate(animal_group_s):
-            curr_record_date = (datetime.utcfromtimestamp(record[0])).strftime('%Y-%m-%dT%H:%M')
-            try:
-                dict[curr_record_date].append((record[0], curr_record_date, record[2], record[3], record[4], record[5]))
-            except KeyError as e:
-                print(e)
-
-        for key in dict:
-            # print(len(dict[key]), dict[key])
-            if len(dict[key]) > 1:
-                records = dict[key]
-                record = records[0]
-                activity_sum = 0
-                for item in records:
-                    activity_sum += item[5]
-
-                sql_records_f.append((record[0], record[1], record[2], record[3],
-                                      record[4], activity_sum))
-            if len(dict[key]) == 1:
-                record = dict[key][0]
-                sql_records_f.append((record[0], record[1], record[2], record[3], record[4], record[5]))
-            if len(dict[key]) == 0:
-                timestamp = time.mktime(datetime.strptime(key, '%Y-%m-%dT%H:%M').timetuple())
-                serial = animal_group_s[0][2]
-                sql_records_f.append((timestamp, key, serial, None, None, None))
-                continue
-
-            if time_initial_s_h_h is False:
-                time_initial_s_h_h = True
-                time_initial_h_h = record[0]
-            if time_initial_s_h is False:
-                time_initial_s_h = True
-                time_initial_h = record[0]
-            if time_initial_s_d is False:
-                time_initial_s_d = True
-                time_initial_d = record[0]
-            if time_initial_s_w is False:
-                time_initial_s_w = True
-                time_initial_w = record[0]
-            if time_initial_s_m is False:
-                time_initial_s_m = True
-                time_initial_m = record[0]
-
-            time_next = record[0]
-            activity_level_sum_h_h += record[5]
-            cpt_h_h += 1
-
-            if not battery_voltage_min_h_h:
-                battery_voltage_min_h_h = record[4]
-
-            if battery_voltage_min_h_h > record[4]:
-                battery_voltage_min_h_h = record[4]
-
-            if not signal_strength_min_h_h:
-                signal_strength_min_h_h = record[3]
-
-            if signal_strength_min_h_h > record[3]:
-                signal_strength_min_h_h = record[3]
-
-            if not signal_strength_max_h_h:
-                signal_strength_max_h_h = record[3]
-
-            if signal_strength_max_h_h < record[3]:
-                signal_strength_max_h_h = record[3]
-
-            activity_level_sum_h += record[5]
-            cpt_h += 1
-
-            if not battery_voltage_min_h:
-                battery_voltage_min_h = record[4]
-
-            if battery_voltage_min_h > record[4]:
-                battery_voltage_min_h = record[4]
-
-            if not signal_strength_min_h:
-                signal_strength_min_h = record[3]
-
-            if signal_strength_min_h > record[3]:
-                signal_strength_min_h = record[3]
-
-            if not signal_strength_max_h:
-                signal_strength_max_h = record[3]
-
-            if signal_strength_max_h < record[3]:
-                signal_strength_max_h = record[3]
-
-            activity_level_sum_d += record[5]
-            cpt_d += 1
-
-            if not battery_voltage_min_d:
-                battery_voltage_min_d = record[4]
-
-            if battery_voltage_min_d > record[4]:
-                battery_voltage_min_d = record[4]
-
-            if not signal_strength_min_d:
-                signal_strength_min_d = record[3]
-
-            if signal_strength_min_d > record[3]:
-                signal_strength_min_d = record[3]
-
-            if not signal_strength_max_d:
-                signal_strength_max_d = record[3]
-
-            if signal_strength_max_d < record[3]:
-                signal_strength_max_d = record[3]
-
-            activity_level_sum_w += record[5]
-            cpt_w += 1
-
-            if not battery_voltage_min_w:
-                battery_voltage_min_w = record[4]
-
-            if battery_voltage_min_w > record[4]:
-                battery_voltage_min_w = record[4]
-
-            if not signal_strength_min_w:
-                signal_strength_min_w = record[3]
-
-            if signal_strength_min_w > record[3]:
-                signal_strength_min_w = record[3]
-
-            if not signal_strength_max_w:
-                signal_strength_max_w = record[3]
-
-            if signal_strength_max_w < record[3]:
-                signal_strength_max_w = record[3]
-
-            activity_level_sum_m += record[5]
-            cpt_m += 1
-
-            if not battery_voltage_min_m:
-                battery_voltage_min_m = record[4]
-
-            if battery_voltage_min_m > record[4]:
-                battery_voltage_min_m = record[4]
-
-            if not signal_strength_min_m:
-                signal_strength_min_m = record[3]
-
-            if signal_strength_min_m > record[3]:
-                signal_strength_min_m = record[3]
-
-            if not signal_strength_max_m:
-                signal_strength_max_m = record[3]
-
-            if signal_strength_max_m < record[3]:
-                signal_strength_max_m = record[3]
-
-            elapsed_days_h_h = get_elapsed_minutes(time_initial_h_h, time_next)
-            if elapsed_days_h_h >= 10:
-                time_initial_s_h_h = False
-                if sys.argv[1] == 'h5':
-                    add_record_to_table_sum(table_h_h, time_initial_h_h, record[2], signal_strength_max_h_h,
-                                            signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
-
-                if sys.argv[1] == 'sql':
-                    sql_records_h_h.append(
-                        (time_initial_h_h, datetime.utcfromtimestamp(time_initial_h_h).strftime('%Y-%m-%dT%H:%M'),
-                         record[2], signal_strength_max_h_h,
-                         signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h))
-                    # insert_record_to_sql_table_("%s_resolution_h_h" % farm_id, time_initial_h_h, record[2], signal_strength_max_h_h,
-                    #                     signal_strength_min_h_h, battery_voltage_min_h_h, activity_level_sum_h_h)
-
-                activity_level_sum_h_h = 0
-                cpt_h_h = 0
-                battery_voltage_min_h_h = None
-                signal_strength_min_h_h = None
-                signal_strength_max_h_h = None
-
-            if not is_same_hour(time_initial_h, time_next):
-                time_initial_s_h = False
-                if sys.argv[1] == 'h5':
-                    add_record_to_table_sum(table_h, time_initial_h, record[2], signal_strength_max_h,
-                                            signal_strength_min_h, battery_voltage_min_h, activity_level_sum_h)
-
-                if sys.argv[1] == 'sql':
-                    sql_records_h.append(
-                        (time_initial_h, datetime.utcfromtimestamp(time_initial_h).strftime('%Y-%m-%dT%H:%M'),
-                         record[2],
-                         signal_strength_max_h,
-                         signal_strength_min_h, battery_voltage_min_h,
-                         activity_level_sum_h))
-                    # insert_record_to_sql_table_("%s_resolution_h" % farm_id, time_initial_h, record[2],
-                    #                             signal_strength_max_h,
-                    #                             signal_strength_min_h, battery_voltage_min_h,
-                    #                             activity_level_sum_h)
-                activity_level_sum_h = 0
-                cpt_h = 0
-                battery_voltage_min_h = None
-                signal_strength_min_h = None
-                signal_strength_max_h = None
-
-            if not is_same_day(time_initial_d, time_next):
-                time_initial_s_d = False
-                if sys.argv[1] == 'h5':
-                    add_record_to_table_sum(table_d, time_initial_d, record[2], signal_strength_max_d,
-                                            signal_strength_min_d, battery_voltage_min_d, activity_level_sum_d)
-
-                if sys.argv[1] == 'sql':
-                    sql_records_d.append((time_initial_d,
-                                          datetime.utcfromtimestamp(time_initial_d).strftime('%Y-%m-%dT%H:%M'),
-                                          record[2],
-                                          signal_strength_max_d,
-                                          signal_strength_min_d, battery_voltage_min_d,
-                                          activity_level_sum_d))
-                    # insert_record_to_sql_table_("%s_resolution_d" % farm_id, time_initial_d, record[2],
-                    #                             signal_strength_max_d,
-                    #                             signal_strength_min_d, battery_voltage_min_d,
-                    #                             activity_level_sum_d)
-                activity_level_sum_d = 0
-                cpt_d = 0
-                battery_voltage_min_d = None
-                signal_strength_min_d = None
-                signal_strength_max_d = None
-
-            elapsed_days_w = get_elapsed_days(time_initial_w, time_next)
-            if elapsed_days_w > 7:
-                time_initial_s_w = False
-                activity_level_sum_w = 0
-                cpt_w = 0
-                battery_voltage_min_w = None
-                signal_strength_min_w = None
-                signal_strength_max_w = None
-            if elapsed_days_w == 7:
-                time_initial_s_w = False
-                if sys.argv[1] == 'h5':
-                    add_record_to_table_sum(table_w, time_initial_w, record[2], signal_strength_max_w,
-                                            signal_strength_min_w, battery_voltage_min_w, activity_level_sum_w)
-
-                if sys.argv[1] == 'sql':
-                    sql_records_w.append((time_initial_w,
-                                          datetime.utcfromtimestamp(time_initial_w).strftime('%Y-%m-%dT%H:%M'),
-                                          record[2],
-                                          signal_strength_max_w,
-                                          signal_strength_min_w, battery_voltage_min_w,
-                                          activity_level_sum_w))
-                    # insert_record_to_sql_table_("%s_resolution_w" % farm_id, time_initial_w, record[2],
-                    #                             signal_strength_max_w,
-                    #                             signal_strength_min_w, battery_voltage_min_w,
-                    #                             activity_level_sum_w)
-                activity_level_sum_w = 0
-                cpt_w = 0
-                battery_voltage_min_w = None
-                signal_strength_min_w = None
-                signal_strength_max_w = None
-
-            if not is_same_month(time_initial_m, time_next):
-                time_initial_s_m = False
-                if sys.argv[1] == 'h5':
-                    add_record_to_table_sum(table_m, time_initial_m, record[2], signal_strength_max_m,
-                                            signal_strength_min_m, battery_voltage_min_m, activity_level_sum_m)
-
-                if sys.argv[1] == 'sql':
-                    sql_records_m.append((time_initial_m,
-                                          datetime.utcfromtimestamp(time_initial_m).strftime('%Y-%m-%dT%H:%M'),
-                                          record[2],
-                                          signal_strength_max_m,
-                                          signal_strength_min_m, battery_voltage_min_m,
-                                          activity_level_sum_m))
-                    # insert_record_to_sql_table_("%s_resolution_m" % farm_id, time_initial_m, record[2],
-                    #                             signal_strength_max_m,
-                    #                             signal_strength_min_m, battery_voltage_min_m,
-                    #                             activity_level_sum_m)
-                activity_level_sum_m = 0
-                cpt_m = 0
-                battery_voltage_min_m = None
-                signal_strength_min_m = None
-                signal_strength_max_m = None
-
-        if sys.argv[1] == 'sql':
-            insert_m_record_to_sql_table_("%s_resolution_m" % farm_id, sql_records_m)
-            insert_m_record_to_sql_table_("%s_resolution_w" % farm_id, sql_records_w)
-            insert_m_record_to_sql_table_("%s_resolution_d" % farm_id, sql_records_d)
-            insert_m_record_to_sql_table_("%s_resolution_h" % farm_id, sql_records_h)
-            insert_m_record_to_sql_table_("%s_resolution_h_h" % farm_id, sql_records_h_h)
-            insert_m_record_to_sql_table("%s_resolution_f" % farm_id, sql_records_f)
-            sql_db_flush()
+        if not MULTI_THREADING_ENABLED:
+            data_resampled_min.extend(resample_to_min(first_timestamp, last_timestamp, animal_records))
+            data_resampled_hour.extend(resample_to_hour(first_timestamp, last_timestamp, animal_records))
+            data_resampled_day.extend(resample_to_day(first_timestamp, last_timestamp, animal_records))
+            data_resampled_week.extend(resample_to_week(first_timestamp, last_timestamp, animal_records))
+            data_resampled_month.extend(resample_to_month(first_timestamp, last_timestamp, animal_records))
+        else:
+            iterable = [animal_records]
+            func1 = partial(resample_to_min, first_timestamp, last_timestamp)
+            func2 = partial(resample_to_hour, first_timestamp, last_timestamp)
+            func3 = partial(resample_to_day, first_timestamp, last_timestamp)
+            func4 = partial(resample_to_week, first_timestamp, last_timestamp)
+            func5 = partial(resample_to_month, first_timestamp, last_timestamp)
+            result_func1 = pool.map_async(func1, iterable)
+            result_func2 = pool.map_async(func2, iterable)
+            result_func3 = pool.map_async(func3, iterable)
+            result_func4 = pool.map_async(func4, iterable)
+            result_func5 = pool.map_async(func5, iterable)
+            r1 = result_func1.get()[0]
+            r2 = result_func2.get()[0]
+            r3 = result_func3.get()[0]
+            r4 = result_func4.get()[0]
+            r5 = result_func5.get()[0]
+            data_resampled_min.extend(r1)
+            data_resampled_hour.extend(r2)
+            data_resampled_day.extend(r3)
+            data_resampled_week.extend(r4)
+            data_resampled_month.extend(r5)
+    #save data in db
+    print("saving data to db...")
+    if sys.argv[1] == 'sql':
+        insert_m_record_to_sql_table_("%s_resolution_m" % farm_id, data_resampled_month)
+        insert_m_record_to_sql_table_("%s_resolution_w" % farm_id, data_resampled_week)
+        insert_m_record_to_sql_table_("%s_resolution_d" % farm_id, data_resampled_day)
+        insert_m_record_to_sql_table_("%s_resolution_h" % farm_id, data_resampled_hour)
+        insert_m_record_to_sql_table("%s_resolution_min" % farm_id, data_resampled_min)
+        sql_db_flush()
 
     if sys.argv[1] == 'h5':
-        table_f.flush()
-        table_h.flush()
+        table_m.append(data_resampled_month)
+        table_w.append(data_resampled_week)
+        table_d.append(data_resampled_day)
+        table_h.append(data_resampled_hour)
+        table_min.append(data_resampled_min)
         table_m.flush()
         table_w.flush()
         table_d.flush()
-        table_h_h.flush()
+        table_h.flush()
+        table_min.flush()
 
+    print(len(data_resampled_min), len(data_resampled_hour), len(data_resampled_day), len(data_resampled_week), len(data_resampled_month))
+    print(get_elapsed_time_string(start_time, time.time()))
     print("finished processing raw file.")
 
 
@@ -988,170 +819,11 @@ def generate_raw_files_from_xlsx(directory_path):
     store.close()
 
 
-def generate_raw_file(farm_id):
-    print("start generating raw file...")
-    rows = 0
-    FILTERS = tables.Filters(complib='blosc', complevel=9)
-    compression = False
-    h5file = None
-    print("farm id :" + farm_id)
-    if compression:
-        purge_file(farm_id + "_data_compressed_blosc_raw.h5")
-        h5file = tables.open_file(farm_id + "_data_compressed_blosc_raw.h5", "w", driver="H5FD_CORE", filters=FILTERS)
-    else:
-        purge_file(farm_id + "_raw.h5")
-        h5file = tables.open_file(farm_id + "_raw.h5", "w", driver="H5FD_CORE")
-
-    group_f = h5file.create_group("/", "resolution_f", 'raw data')
-    table_f = h5file.create_table(group_f, "data", Animal, "Animal data in full resolution")
-
-    # db = client[farm_id]
-    # colNames = db.list_collection_names()
-    # colNames.sort()
-    # collection_count = 0
-
-    # for collection in colNames:
-    #     collection_count += 1
-    #     animals = db[collection].find_one()["animals"]
-    #
-    #     for animal in animals:
-    #         tag_data_raw = animal["tag_data"]
-    #         #removes duplicates
-    #         tag_data = [i for n, i in enumerate(tag_data_raw) if i not in tag_data_raw[n + 1:]]
-    #         add_record_to_table(table_f, tag_data)
-    #         rows += len(tag_data)
-    #
-    #     del animals
-    #     print(str(collection_count) + "/" + str(len(colNames)) + " " + collection + "...")
-    # if cpt >= 1:
-    #     break
-
-    print("finished added %s rows to pytable" % str(rows))
-    print("finished generating raw file.")
-    exit(0)
-
-
 if __name__ == '__main__':
+    # generate_raw_files_from_xlsx("C:\Tracking Data")
     if sys.argv[1] == 'sql':
-        print("store data in sql database...")
+        print("start...")
         db_name = "south_africa_test4"
         create_and_connect_to_sql_db(db_name)
-        # show_all_records_in_sql_table("delmas_70101200027_resolution_h_h")
         drop_all_tables(db_name)
-
     process_raw_h5files("C:\SouthAfrica\Tracking Data\\raw_data.h5")
-
-    # generate_raw_files_from_xlsx("C:\Tracking Data")
-    # farms = by_size(db_names, 11)
-    # farms = ["70101100019", "70101200027"]
-    # for farm_id in farms:
-    #     if os.path.isfile("C:\\Users\\fo18103\PycharmProjects\mongo2pytables\src\\"+farm_id+"_raw.h5"):
-    #         print("exist.")
-    #         process_raw_file(farm_id)
-    #     else:
-    #         print("does not exist.")
-    #         generate_raw_file(farm_id)
-    #         process_raw_file(farm_id)
-
-# if db_type == 1:
-#     rows = 0
-#     cluster = Cluster(['127.0.0.1'])
-#     session = cluster.connect()
-#     db_names = ["70101200027_small"]
-#     for farm_id in db_names:
-#         # if len(farm_id) < 11:
-#         #     continue
-#         print("farm id :" + farm_id)
-#         # db = client[farm_id]
-#         # colNames = db.list_collection_names()
-#         # collection_count = 0
-#         # colNames.sort()
-#         session.execute("""
-#             CREATE KEYSPACE IF NOT EXISTS \"%s\"
-#             WITH replication = { 'class': 'SimpleStrategy', 'replication_factor': '5' }
-#             """ % farm_id)
-#         print("setting keyspace...")
-#         session.set_keyspace(farm_id)
-#         table_name = "data"
-#
-#         try:
-#             # session.execute(
-#             #     "CREATE TABLE if not exists " + "\"" + table_name + "\"" + " (id Text, epoch Int,control_station bigint,serial_number bigint," +
-#             #     "signal_strength Int,battery_voltage Int,first_sensor_value Int,x_min Int,x_max Int,y_min Int,y_max Int,z_min Int,z_max Int, PRIMARY KEY(id))")
-#             session.execute(
-#                 "CREATE TABLE if not exists " + "\"" + "test" + "\"" + " (id Int, PRIMARY KEY(id))")
-#
-#             n = 30000
-#             for x in xrange(0, n):
-#                 query = """INSERT INTO """ + "\"" + str(
-#                     farm_id) + "\"" + "." + "\"" + "test" + "\"" + """ (id) VALUES (%s)"""
-#
-#                 future = session.execute_async(query % int(x))
-#                 block_future_res = future.result()
-#                 block_future_res.response_future
-#                 # print(block_future_res.response_future)
-#                 # print((x/max)*100)
-#                 a = 0
-#
-#         except Exception as e:
-#             print(e)
-#
-#         exit(0)
-#
-#         # for collection_names_in_day in colNames:
-#         #     collection = db[collection_names_in_day]
-#         #     animals = collection.find_one()["animals"]
-#         #     for animal in animals:
-#         #         tag_data = animal["tag_data"]
-#         #         serial_number = tag_data[0]["serial_number"]
-#         #
-#         #         for entry in tag_data:
-#         #             ss = -1
-#         #             if entry['signal_strength'] is not None and re.sub("[^0-9]", "", entry["signal_strength"]) != '':
-#         #                 ss = int(re.sub("[^0-9]", "", entry["signal_strength"]))
-#         #             bv = -1
-#         #             if entry['battery_voltage'] is not None and re.sub("[^0-9]", "", entry["battery_voltage"]) != '':
-#         #                 bv = int(re.sub("[^0-9]", "", entry["battery_voltage"]))
-#         #             x_min, x_max, y_min, y_max, z_min, z_max = 0, 0, 0, 0, 0, 0
-#         #             ssv = ""
-#         #             if 'second_sensor_value' in entry:
-#         #                 ssv = str(entry["second_sensor_value"])
-#         #                 split = ssv.split(":")
-#         #                 x_min, x_max, y_min, y_max, z_min, z_max = split[0], split[1], split[2], split[3], split[4], split[5]
-#         #                 print(x_min + " " + x_max + " " + y_min + " " + y_max + " " + z_min + " " + z_max)
-#         #
-#         #             date_string = entry["date"] + " " + entry["time"]
-#         #             epoch = int(datetime.strptime(date_string, '%d/%m/%y %I:%M:%S %p').timestamp())
-#         #
-#         #             farm = farm_id.split("_")
-#         #
-#         #             # query = """INSERT INTO """ + "\"" + str(
-#         #             #     farm_id) + "\"" + "." + "\"" + table_name + "\"" + """ (id, epoch,""" +\
-#         #             #     """control_station, serial_number, signal_strength, battery_voltage, first_sensor_value, """ +\
-#         #             #     """x_min, x_max, y_min, y_max, z_min, z_max) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-#         #             query = """INSERT INTO """ + "\"" + str(farm_id) + "\"" + "." + "\"" + "test" + "\"" + """ (id) VALUES (%s)"""
-#         #
-#         #             id = str(epoch)+"-"+str(serial_number)+" "+str(uuid.uuid4())
-#         #             try:
-#         #                 # session.execute_async(query, (
-#         #                 #     id, epoch, int(farm[0]), int(serial_number), ss, bv, int(entry["first_sensor_value"]), x_min, x_max,
-#         #                 #     y_min, y_max, z_min, z_max))
-#         #
-#         #                 session.execute_async(query % int(rows))
-#         #
-#         #                 rows += 1
-#         #
-#         #             except Exception as e:
-#         #                 print("error while insert into")
-#         #                 print(e)
-#         #             # try:
-#         #             #     session.execute_async(query, (epoch, int(farm[0]), int(serial_number), ss, bv, int(entry["first_sensor_value"]),  x_min, x_max, y_min, y_max, z_min, z_max))
-#         #             # except Exception as e:
-#         #             #     print("error while insert into")
-#         #             #     print(e)
-#         #
-#         #     collection_count = collection_count + 1
-#         #     # if cpt >= 1:
-#         #     #     break
-#         #     print(str(collection_count) + "/" + str(len(colNames)) + " " + collection_names_in_day + "...")
-#     print("finished added %s rows to cassandra" % str(rows))
