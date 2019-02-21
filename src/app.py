@@ -826,4 +826,5 @@ if __name__ == '__main__':
         db_name = "south_africa_test4"
         create_and_connect_to_sql_db(db_name)
         drop_all_tables(db_name)
+
     process_raw_h5files("C:\SouthAfrica\Tracking Data\\raw_data.h5")
