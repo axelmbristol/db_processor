@@ -294,35 +294,6 @@ def get_elapsed_time(time_initial, time_next):
     return [rd.days, rd.hours, rd.minutes, rd.seconds]
 
 
-def process_raw_h5files(path):
-    print(path)
-    h5_raw = tables.open_file(path, "r")
-    data = h5_raw.root.table
-    list_raw = []
-    print("loading data...")
-    # cpt = 0
-    for idx, x in enumerate(data):  # need idx for data iteration?
-        farm_id = x['control_station']
-        if farm_id != 70101200027: #todo remove
-            continue
-        # cpt += 1
-        # if cpt > 100000:
-        #     break
-        value = (x['timestamp'], farm_id, x['serial_number'], x['signal_strength'], x['battery_voltage'],
-                 x['first_sensor_value'])
-        list_raw.append(value)
-
-    # group records by farm id/control_station
-    groups = defaultdict(list)
-    for i, obj in enumerate(list_raw):
-        groups[obj[1]].append(obj)
-    animal_list_grouped_by_farmid = list(groups.values())
-
-    for group in animal_list_grouped_by_farmid:
-        farm_id = str(group[0][1])
-        process_raw_file(farm_id, group)
-
-
 def check_if_same_day(curr_date_time, next_date_time):
     return curr_date_time.year == next_date_time.year and curr_date_time.month == next_date_time.month and \
            curr_date_time.day == next_date_time.day and curr_date_time.hour == next_date_time.hour and \
@@ -330,14 +301,13 @@ def check_if_same_day(curr_date_time, next_date_time):
 
 
 def get_first_last_timestamp(animal_records):
+    animal_records = sorted(animal_records, key=lambda x: x[0]) #make sure that the records are sorted by timestamp
     first_record_date = animal_records[0][0]
     last_record_date = animal_records[-1][0]
     first_record_date_reduced_to_first_sec = datetime.strptime(datetime.fromtimestamp(first_record_date)
                                                                .strftime("%Y-%m-%d %H:%M:00"), "%Y-%m-%d %H:%M:%S")
-
     last_record_date_reduced_to_first_sec = datetime.strptime(datetime.fromtimestamp(last_record_date)
                                                               .strftime("%Y-%m-%d %H:%M:00"), "%Y-%m-%d %H:%M:%S")
-
     return first_record_date_reduced_to_first_sec, last_record_date_reduced_to_first_sec
 
 
@@ -589,6 +559,30 @@ def resample_to_month(first_timestamp, last_timestamp, animal_records):
     return data
 
 
+def process_raw_h5files(path):
+    print(path)
+    h5_raw = tables.open_file(path, "r")
+    data = h5_raw.root.table
+    list_raw = []
+    print("loading data...")
+    for idx, x in enumerate(data):  # need idx for data iteration?
+        farm_id = x['control_station']
+        if farm_id != 70101200027: #todo remove
+            continue
+        value = (x['timestamp'], farm_id, x['serial_number'], x['signal_strength'], x['battery_voltage'],
+                 x['first_sensor_value'], datetime.fromtimestamp(x['timestamp']).strftime("%d/%m/%Y %H:%M:%S"))
+        list_raw.append(value)
+    # group records by farm id/control_station
+    groups = defaultdict(list)
+    for i, obj in enumerate(list_raw):
+        groups[obj[1]].append(obj)
+    animal_list_grouped_by_farmid = list(groups.values())
+
+    for group in animal_list_grouped_by_farmid:
+        farm_id = str(group[0][1])
+        process_raw_file(farm_id, group)
+
+
 def process_raw_file(farm_id, data):
     start_time = time.time()
     farm_id = format_farm_id(farm_id)
@@ -606,6 +600,7 @@ def process_raw_file(farm_id, data):
     data_resampled_day = []
     data_resampled_week = []
     data_resampled_month = []
+
     MULTI_THREADING_ENABLED = True
 
     if MULTI_THREADING_ENABLED:
