@@ -80,12 +80,14 @@ def show_all_records_in_sql_table(table_name):
 
 
 def insert_m_record_to_sql_table(table_id, records):
+    print("inserting %d records to table %s" % (len(records), table_id))
     query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength, battery_voltage, " \
                                          "first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s)"
     execute_sql_query(query, records)
 
 
 def insert_m_record_to_sql_table_(table_id, records):
+    print("inserting %d records to table %s" % (len(records), table_id))
     query = "INSERT INTO `" + table_id + "` (timestamp, timestamp_s, serial_number, signal_strength_max, " \
                                          "signal_strength_min, battery_voltage, first_sensor_value) VALUES (%s, %s, %s, %s, %s, %s, %s)"
     execute_sql_query(query, records)
@@ -382,14 +384,14 @@ def resample_to_min(first_timestamp, last_timestamp, animal_records):
     structure_m = {}
     for i in xrange(0, n_minutes_in_between):
         next_timestamp = first_timestamp + timedelta(minutes=i)
-        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%dT%H:%M")
         serial_number = animal_records[0][2]  # just take first record and get serial number
         structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
                                                       next_timestamp_human_readable, serial_number, None, None, None]
 
     # fill in resampled structure with records data
     for record in animal_records:
-        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d %H:%M:00")
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%dT%H:%M")
         if record_timestamp_f in structure_m:
             struct = structure_m[record_timestamp_f]
             if struct[3] is None:
@@ -418,14 +420,14 @@ def resample_to_hour(first_timestamp, last_timestamp, animal_records):
     structure_m = {}
     for i in xrange(0, n_hours_in_between):
         next_timestamp = first_timestamp + timedelta(hours=i)
-        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%dT%H:00")
         serial_number = animal_records[0][2] #just take first record and get serial number
         structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
                                                       next_timestamp_human_readable, serial_number, None, None, None, None]
 
     # fill in resampled structure with records data
     for record in animal_records:
-        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d %H:00:00")
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%dT%H:00")
         if record_timestamp_f in structure_m:
             struct = structure_m[record_timestamp_f]
             if struct[3] is None:
@@ -455,14 +457,14 @@ def resample_to_day(first_timestamp, last_timestamp, animal_records):
     #build the time structure
     for i in xrange(0, n_days_in_between):
         next_timestamp = first_timestamp + timedelta(days=i)
-        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d 00:00:00")
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%dT00:00")
         serial_number = animal_records[0][2] #just take first record and get serial number
         structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
                                                       next_timestamp_human_readable, serial_number, None, None, None, None]
 
     # fill in resampled structure with records data
     for record in animal_records:
-        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d 00:00:00")
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%dT00:00")
         if record_timestamp_f in structure_m:
             struct = structure_m[record_timestamp_f]
             if struct[3] is None:
@@ -492,14 +494,14 @@ def resample_to_week(first_timestamp, last_timestamp, animal_records):
     #build the time structure
     for i in xrange(0, n_weeks_in_between):
         next_timestamp = first_timestamp + timedelta(days=i*7)
-        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d 00:00:00")
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%dT00:00")
         serial_number = animal_records[0][2] #just take first record and get serial number
         structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
                                                       next_timestamp_human_readable, serial_number, None, None, None, None]
 
     # fill in resampled structure with records data
     for record in animal_records:
-        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d 00:00:00")
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%dT00:00")
         if record_timestamp_f in structure_m:
             struct = structure_m[record_timestamp_f]
             if struct[3] is None:
@@ -529,14 +531,14 @@ def resample_to_month(first_timestamp, last_timestamp, animal_records):
     #build the time structure
     for i in xrange(0, n_months_in_between):
         next_timestamp = first_timestamp + timedelta(days=i*30)
-        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%d 00:00:00")
+        next_timestamp_human_readable = next_timestamp.strftime("%Y-%m-%dT00:00")
         serial_number = animal_records[0][2] #just take first record and get serial number
         structure_m[next_timestamp_human_readable] = [int(time.mktime(next_timestamp.timetuple())),
                                                       next_timestamp_human_readable, serial_number, None, None, None, None]
 
     # fill in resampled structure with records data
     for record in animal_records:
-        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%d 00:00:00")
+        record_timestamp_f = datetime.fromtimestamp(record[0]).strftime("%Y-%m-%dT00:00")
         if record_timestamp_f in structure_m:
             struct = structure_m[record_timestamp_f]
             if struct[3] is None:
@@ -570,7 +572,7 @@ def process_raw_h5files(path):
         if farm_id != 70101200027: #todo remove
             continue
         value = (x['timestamp'], farm_id, x['serial_number'], x['signal_strength'], x['battery_voltage'],
-                 x['first_sensor_value'], datetime.fromtimestamp(x['timestamp']).strftime("%d/%m/%Y %H:%M:%S"))
+                 x['first_sensor_value'])
         list_raw.append(value)
     # group records by farm id/control_station
     groups = defaultdict(list)
@@ -818,7 +820,7 @@ if __name__ == '__main__':
     # generate_raw_files_from_xlsx("C:\Tracking Data")
     if sys.argv[1] == 'sql':
         print("start...")
-        db_name = "south_africa_test4"
+        db_name = "south_africa_test5"
         create_and_connect_to_sql_db(db_name)
         drop_all_tables(db_name)
 
